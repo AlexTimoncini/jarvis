@@ -1,0 +1,58 @@
+/* ============================================================
+   JARVIS PWA - Design tokens / palette
+   Cyan dominante + accenti ambra. Il colore d'accento (--accent)
+   viene aggiornato a runtime dallo stato corrente.
+   ============================================================ */
+:root {
+  /* Base surfaces */
+  --bg-0: #02060c;
+  --bg-1: #04101c;
+  --bg-2: #061826;
+  --grid: rgba(0, 229, 255, 0.06);
+
+  /* Brand cyan */
+  --cyan: #00e5ff;
+  --cyan-soft: #7df3ff;
+  --cyan-dim: rgba(0, 229, 255, 0.35);
+  --cyan-faint: rgba(0, 229, 255, 0.12);
+
+  /* Accents */
+  --amber: #ffae3b;
+  --gold: #ffd27a;
+  --red: #ff3b47;
+  --white-ice: #dff6ff;
+
+  /* Runtime accent (driven by state machine) */
+  --accent: #00e5ff;
+  --accent-2: #7df3ff;
+  --accent-rgb: 0, 229, 255;
+  --glow: 0.6;
+
+  /* Typography */
+  --font: "Eurostile", "Rajdhani", "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+  --mono: "Share Tech Mono", "SFMono-Regular", ui-monospace, monospace;
+
+  /* Layout */
+  --pad: clamp(10px, 3.5vw, 18px);
+  --radius: 10px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Z-index layers */
+  --z-telemetry: 1;
+  --z-sphere: 2;
+  --z-hud-canvas: 3;
+  --z-widgets: 4;
+  --z-boot: 50;
+  --z-debug: 60;
+}
+
+/* Per-state accent palette (consumed by JS to set --accent vars) */
+:root {
+  --state-idle: #00e5ff;
+  --state-wake: #5cf0ff;
+  --state-listening: #18b6ff;
+  --state-speaking: #ffd27a;
+  --state-thinking: #ffae3b;
+  --state-error: #ff3b47;
+}

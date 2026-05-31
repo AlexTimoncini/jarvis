@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#02060c" />
+  <title>J.A.R.V.I.S.</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="./assets/icons/icon-192.png" />
+  <meta name="application-name" content="JARVIS" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="JARVIS" />
+
+  <link rel="stylesheet" href="./css/variables.css" />
+  <link rel="stylesheet" href="./css/layout.css" />
+  <link rel="stylesheet" href="./css/hud.css" />
+  <link rel="stylesheet" href="./css/animations.css" />
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./assets/vendor/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app" data-state="boot">
+    <!-- Background layers -->
+    <div class="bg-grid" aria-hidden="true"></div>
+    <div class="bg-scan" aria-hidden="true"></div>
+    <div class="vignette" aria-hidden="true"></div>
+
+    <!-- Background telemetry (behind the sphere) -->
+    <canvas id="telemetry-canvas" aria-hidden="true"></canvas>
+
+    <!-- Full-screen render layers (sphere + HUD overlay) -->
+    <canvas id="sphere-canvas" aria-hidden="true"></canvas>
+    <canvas id="hud-canvas" aria-hidden="true"></canvas>
+
+    <!-- Top HUD -->
+    <header class="hud-top">
+      <section class="widget widget--clock reveal" id="clock" data-widget="clock">
+        <div class="clock__time" data-clock-time>00:00<span class="clock__sec" data-clock-sec>00</span></div>
+        <div class="clock__date" data-clock-date>--- -- ---</div>
+        <div class="widget__deco"></div>
+      </section>
+
+      <section class="widget widget--weather reveal" id="weather" data-widget="weather">
+        <div class="weather__temp" data-weather-temp>--&deg;</div>
+        <div class="weather__desc" data-weather-desc>--</div>
+        <div class="weather__loc" data-weather-loc>--</div>
+        <div class="widget__deco widget__deco--right"></div>
+      </section>
+    </header>
+
+    <!-- Center stage label -->
+    <main class="stage" id="stage" role="button" aria-label="Attiva JARVIS">
+      <!-- Engraved rotating brand ring around the reactor -->
+      <svg class="brand-ring" viewBox="0 0 400 400" aria-hidden="true"
+           xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+        <defs>
+          <linearGradient id="brandMetal" x1="0" y1="0" x2="0" y2="1">
+            <stop class="brand-stop brand-stop--hi" offset="0%" stop-color="#f1feff" />
+            <stop class="brand-stop brand-stop--mid" offset="42%" stop-color="#86ecff" />
+            <stop class="brand-stop brand-stop--lo" offset="58%" stop-color="#1f9fc4" />
+            <stop class="brand-stop brand-stop--deep" offset="100%" stop-color="#06323e" />
+          </linearGradient>
+          <path id="brandCircle" d="M200,42 A158,158 0 1 1 199.99,42" />
+        </defs>
+        <text class="brand-ring__carve">
+          <textPath href="#brandCircle" xlink:href="#brandCircle" startOffset="0" textLength="992" lengthAdjust="spacing">J.A.R.V.I.S. &#9670; J.A.R.V.I.S. &#9670; J.A.R.V.I.S. &#9670; </textPath>
+        </text>
+        <text class="brand-ring__face">
+          <textPath href="#brandCircle" xlink:href="#brandCircle" startOffset="0" textLength="992" lengthAdjust="spacing">J.A.R.V.I.S. &#9670; J.A.R.V.I.S. &#9670; J.A.R.V.I.S. &#9670; </textPath>
+        </text>
+      </svg>
+      <div class="stage__label">
+        <div class="stage__state" id="state-label">STANDBY</div>
+        <div class="stage__hint" id="state-hint">tocca per attivare</div>
+      </div>
+    </main>
+
+    <!-- Bottom HUD -->
+    <footer class="hud-bottom">
+      <section class="widget widget--stats reveal" id="stats" data-widget="stats">
+        <div class="stats__row"><span class="stats__key">MEM</span>
+          <span class="bar"><i data-stat-bar="mem"></i></span>
+          <span class="stats__val" data-stat-val="mem">--%</span>
+        </div>
+        <div class="stats__row"><span class="stats__key">CPU</span>
+          <span class="bar"><i data-stat-bar="cpu"></i></span>
+          <span class="stats__val" data-stat-val="cpu">--%</span>
+        </div>
+        <div class="stats__row"><span class="stats__key">PWR</span>
+          <span class="bar"><i data-stat-bar="pwr"></i></span>
+          <span class="stats__val" data-stat-val="pwr">--%</span>
+        </div>
+        <div class="stats__uptime" data-stat-uptime>UPTIME 00:00:00</div>
+      </section>
+
+      <section class="widget widget--wave reveal" id="wave" data-widget="wave">
+        <canvas id="waveform-canvas"></canvas>
+        <div class="wave__label" data-wave-label>AUDIO IDLE</div>
+      </section>
+
+      <nav class="widget widget--links reveal" id="links" data-widget="links" aria-label="Collegamenti rapidi"></nav>
+
+      <div class="hex-field" id="hexfield" aria-hidden="true"></div>
+    </footer>
+
+    <!-- Now playing (music) -->
+    <section class="widget widget--music" id="music" data-widget="music" aria-hidden="true">
+      <canvas id="music-eq" class="music__eq" aria-hidden="true"></canvas>
+      <div class="music__info">
+        <div class="music__icon" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="music__meta">
+          <div class="music__title" data-music-title>--</div>
+          <div class="music__artist" data-music-artist>--</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Microphone toggle -->
+    <button id="mic-toggle" class="mic-toggle" type="button" aria-label="Microfono" aria-pressed="false">
+      <span class="mic-toggle__dot"></span>MIC
+    </button>
+
+    <!-- Boot overlay -->
+    <div class="boot" id="boot">
+      <div class="boot__bar"><i id="boot-progress"></i></div>
+      <div class="boot__text" id="boot-text">INITIALIZING J.A.R.V.I.S.</div>
+    </div>
+  </div>
+
+  <script type="module" src="./js/main.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch((err) => {
+          console.warn('[JARVIS] SW registration failed:', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>

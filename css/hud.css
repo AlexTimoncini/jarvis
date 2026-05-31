@@ -1,0 +1,348 @@
+/* ============================================================
+   JARVIS PWA - HUD widgets styling
+   ============================================================ */
+
+/* Generic widget chrome */
+.widget {
+  position: relative;
+  padding: 10px 12px;
+  background:
+    linear-gradient(180deg, rgba(var(--accent-rgb), 0.06), rgba(var(--accent-rgb), 0.02));
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
+  border-radius: var(--radius);
+  backdrop-filter: blur(2px);
+  box-shadow:
+    inset 0 0 18px rgba(var(--accent-rgb), 0.08),
+    0 0 12px rgba(var(--accent-rgb), 0.06);
+  color: var(--cyan-soft);
+  transition: border-color 0.5s ease, box-shadow 0.5s ease, color 0.5s ease;
+}
+.widget::before {
+  /* corner ticks */
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgba(var(--accent-rgb), 0.18);
+  border-radius: calc(var(--radius) - 4px);
+  clip-path: polygon(0 0, 16px 0, 16px 2px, 2px 2px, 2px 16px, 0 16px,
+                     0 100%, 16px 100%, 16px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 16px), 0 calc(100% - 16px));
+  pointer-events: none;
+}
+
+.widget__deco {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(var(--accent-rgb), 0.45);
+  border-radius: 50%;
+  opacity: 0.7;
+}
+.widget__deco::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--accent);
+  animation: spin 4s linear infinite;
+}
+
+/* Clock */
+.widget--clock { min-width: 38vw; }
+.clock__time {
+  font-family: var(--mono);
+  font-size: clamp(22px, 8vw, 34px);
+  letter-spacing: 2px;
+  color: var(--white-ice);
+  text-shadow: 0 0 14px rgba(var(--accent-rgb), 0.65);
+  line-height: 1;
+}
+.clock__sec { font-size: 0.5em; margin-left: 4px; color: var(--accent); vertical-align: super; }
+.clock__date {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: clamp(10px, 3.2vw, 13px);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--cyan-dim);
+}
+
+/* Weather */
+.widget--weather { text-align: right; min-width: 34vw; }
+.weather__temp {
+  font-family: var(--mono);
+  font-size: clamp(26px, 9vw, 38px);
+  color: var(--white-ice);
+  text-shadow: 0 0 14px rgba(var(--accent-rgb), 0.55);
+  line-height: 1;
+}
+.weather__desc {
+  margin-top: 4px;
+  font-size: clamp(10px, 3.2vw, 13px);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--cyan-soft);
+}
+.weather__loc { font-family: var(--mono); font-size: 10px; letter-spacing: 2px; color: var(--cyan-dim); }
+
+/* Stage center brand - engraved rotating ring around the reactor.
+   Fixed to the viewport center so it stays concentric with the reactor
+   (the 3D core renders at the canvas/viewport center). */
+.brand-ring {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: clamp(230px, 70vw, 380px);
+  aspect-ratio: 1;
+  z-index: var(--z-widgets);
+  pointer-events: none;
+  overflow: visible;
+  transform: translate(-50%, -50%);
+  transform-origin: 50% 50%;
+  animation: brand-spin 44s linear infinite;
+  /* glow intensity follows the reactor accent + state */
+  filter: drop-shadow(0 0 9px rgba(var(--accent-rgb), 0.5));
+  opacity: 0.9;
+  transition: opacity 0.5s ease;
+}
+.brand-ring text {
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: 27px;
+  letter-spacing: 1.5px;
+}
+/* metallic face - tinted by the current state accent */
+.brand-ring__face {
+  fill: url(#brandMetal);
+  stroke: color-mix(in srgb, var(--accent) 35%, #02121a);
+  stroke-width: 0.4;
+}
+/* dark drop offset underneath -> carved/engraved depth */
+.brand-ring__carve {
+  fill: rgba(0, 0, 0, 0.6);
+  transform: translate(0.8px, 1.5px);
+}
+/* gradient stops derive from the live --accent so the ring shifts
+   colour with the reactor state (idle/listening/speaking/error) */
+.brand-stop--hi   { stop-color: var(--accent-2); }
+.brand-stop--mid  { stop-color: var(--accent); }
+.brand-stop--lo   { stop-color: color-mix(in srgb, var(--accent) 60%, #021018); }
+.brand-stop--deep { stop-color: color-mix(in srgb, var(--accent) 22%, #021018); }
+
+/* a touch brighter while JARVIS is actively engaged */
+#app[data-state="listening"] .brand-ring,
+#app[data-state="speaking"] .brand-ring { opacity: 1; filter: drop-shadow(0 0 14px rgba(var(--accent-rgb), 0.7)); }
+#app[data-state="idle"] .brand-ring { opacity: 0.78; }
+
+@keyframes brand-spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+.stage__state {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: clamp(11px, 3.6vw, 15px);
+  letter-spacing: 5px;
+  text-transform: uppercase;
+  color: var(--accent);
+  transition: color 0.5s ease;
+}
+.stage__hint {
+  margin-top: 6px;
+  font-size: 10px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--cyan-dim);
+  animation: pulse-dim 2.6s ease-in-out infinite;
+}
+
+/* Stats */
+.stats__row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.stats__key { font-family: var(--mono); font-size: 10px; letter-spacing: 2px; width: 30px; color: var(--cyan-dim); }
+.bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(var(--accent-rgb), 0.12);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.7);
+  transition: width 0.45s ease;
+}
+.stats__val { font-family: var(--mono); font-size: 10px; width: 34px; text-align: right; color: var(--cyan-soft); }
+.stats__uptime { margin-top: 4px; font-family: var(--mono); font-size: 9px; letter-spacing: 2px; color: var(--cyan-dim); }
+
+/* Now playing (music) */
+.widget--music {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + 16px);
+  transform: translateX(-50%);
+  z-index: var(--z-widgets);
+  width: min(92vw, 460px);
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(3, 14, 22, 0.82), rgba(2, 8, 14, 0.9));
+  border: 1px solid rgba(var(--accent-rgb), 0.4);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0 26px rgba(var(--accent-rgb), 0.2), inset 0 0 18px rgba(var(--accent-rgb), 0.06);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) translateY(14px);
+  transition: opacity 0.4s ease, transform 0.5s cubic-bezier(0.2, 0.85, 0.25, 1), visibility 0s linear 0.5s;
+}
+.widget--music.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+  transition: opacity 0.4s ease, transform 0.5s cubic-bezier(0.2, 0.85, 0.25, 1), visibility 0s;
+}
+.music__eq {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.5;
+  pointer-events: none;
+}
+.music__info {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+/* animated bars icon */
+.music__icon {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 26px;
+  flex: none;
+}
+.music__icon span {
+  width: 4px;
+  height: 40%;
+  background: var(--accent);
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.7);
+  animation: music-bars 0.9s ease-in-out infinite;
+}
+.music__icon span:nth-child(2) { animation-delay: 0.25s; }
+.music__icon span:nth-child(3) { animation-delay: 0.5s; }
+@keyframes music-bars {
+  0%, 100% { height: 30%; }
+  50% { height: 100%; }
+}
+.music__meta { min-width: 0; flex: 1; }
+.music__title {
+  font-size: clamp(15px, 4.6vw, 19px);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--white-ice);
+  text-shadow: 0 0 14px rgba(var(--accent-rgb), 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.music__artist {
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Waveform */
+.widget--wave { display: flex; flex-direction: column; }
+#waveform-canvas { width: 100%; height: 56px; display: block; }
+.wave__label { margin-top: 4px; font-family: var(--mono); font-size: 9px; letter-spacing: 2px; color: var(--cyan-dim); text-align: center; }
+
+/* Links */
+.widget--links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  padding: 8px;
+}
+.link-chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  border-radius: 999px;
+  color: var(--cyan-soft);
+  background: rgba(var(--accent-rgb), 0.05);
+  transition: all 0.25s ease;
+}
+.link-chip:active { background: rgba(var(--accent-rgb), 0.22); color: var(--white-ice); }
+
+/* Hex field */
+.hex-field {
+  height: 34px;
+  opacity: 0.5;
+  background-image:
+    radial-gradient(circle at 50% 50%, transparent 60%, rgba(var(--accent-rgb), 0.18) 61%);
+  background-size: 22px 22px;
+  mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent);
+}
+
+/* Microphone toggle */
+.mic-toggle {
+  position: fixed;
+  top: calc(var(--safe-top) + 6px);
+  right: 8px;
+  z-index: var(--z-debug);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  padding: 4px 10px;
+  color: var(--cyan-dim);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  border-radius: 6px;
+}
+.mic-toggle__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(var(--accent-rgb), 0.4);
+}
+.mic-toggle[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.mic-toggle[aria-pressed="true"] .mic-toggle__dot {
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  animation: mic-pulse 1.4s ease-in-out infinite;
+}
+.mic-toggle[disabled] { opacity: 0.4; }
+@keyframes mic-pulse {
+  0%, 100% { transform: scale(0.8); opacity: 0.6; }
+  50% { transform: scale(1.2); opacity: 1; }
+}
+
+

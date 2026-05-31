@@ -1,0 +1,18 @@
+.idea/
+.DS_Store
+
+# Server secrets, personal memory & generated audio cache
+server/config.php
+server/profile.json
+server/cache/
+
+# Music library: keep the structure, ignore the (large) audio files & manifest
+music/**/*.mp3
+music/**/*.m4a
+music/**/*.aac
+music/**/*.ogg
+music/**/*.oga
+music/**/*.opus
+music/**/*.wav
+music/**/*.flac
+music/catalog.json
