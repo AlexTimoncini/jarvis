@@ -1,0 +1,28 @@
+# JARVIS — PWA + HTTPS (InfinityFree / Apache)
+
+<IfModule mod_mime.c>
+  AddType application/manifest+json .webmanifest
+  AddType application/javascript .js
+</IfModule>
+
+# Service worker must not be cached aggressively
+<Files "sw.js">
+  <IfModule mod_headers.c>
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Service-Worker-Allowed "/"
+  </IfModule>
+</Files>
+
+<Files "manifest.php">
+  <IfModule mod_headers.c>
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+  </IfModule>
+</Files>
+
+# Force HTTPS (required for PWA install + microphone)
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !https
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
