@@ -7,10 +7,9 @@
   <title>J.A.R.V.I.S.</title>
 
   <!-- PWA -->
-  <link rel="manifest" href="./manifest.php" />
+  <link rel="manifest" href="./manifest.json" />
   <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="./assets/icons/icon-192.png" />
-  <link rel="icon" type="image/png" sizes="512x512" href="./assets/icons/icon-512.png" />
   <meta name="application-name" content="JARVIS" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -143,21 +142,12 @@
 
   <script type="module" src="./js/main.js"></script>
   <script>
-    (function () {
-      if (!('serviceWorker' in navigator)) return;
-
-      const base = location.pathname.replace(/[^/]*$/, '') || '/';
-      const swUrl = base + 'sw.js';
-
+    if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register(swUrl, { scope: base }).then((reg) => {
-          console.info('[JARVIS] PWA attiva — scope:', base);
-          reg.update();
-        }).catch((err) => {
-          console.warn('[JARVIS] Service worker non registrato:', err);
-        });
+        navigator.serviceWorker.register('./sw.js')
+          .catch((err) => console.warn('[JARVIS] Service worker:', err));
       });
-    })();
+    }
   </script>
 </body>
 </html>

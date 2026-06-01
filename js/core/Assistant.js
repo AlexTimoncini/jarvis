@@ -91,7 +91,9 @@ export class Assistant {
     this.music = music;     // MusicPlayer
     this.library = library; // MusicLibrary
     this.musicHistory = []; // recently played tracks (for "previous")
-    this.authenticated = false; // session unlocked via the access code
+    // Access session persists across reloads / PWA restarts: once unlocked,
+    // JARVIS won't ask for the code again on this device.
+    this.authenticated = Assistant._loadAuth();
     this.awaitingCode = false;  // next utterance is treated as the code
     this.timers = new Set();
     this.wakeTimer = null;
@@ -101,6 +103,18 @@ export class Assistant {
       if (to === 'listening' || to === 'speaking') this.widgets.show('wave');
       else this.widgets.hide('wave');
     });
+  }
+
+  static _loadAuth() {
+    try { return localStorage.getItem('jarvis-auth') === '1'; } catch (e) { return false; }
+  }
+
+  _persistAuth(on) {
+    this.authenticated = on;
+    try {
+      if (on) localStorage.setItem('jarvis-auth', '1');
+      else localStorage.removeItem('jarvis-auth');
+    } catch (e) { /* private mode: keep in-memory only */ }
   }
 
   _armWake() {
@@ -194,6 +208,16 @@ export class Assistant {
       this._requestCode();
       return;
     }
+    // While music plays, skip the greeting and go straight to listening so
+    // "stop" / "skip" feel instant (music ducks during the listening state).
+    if (this.music && this.music.playing) {
+      this._clear();
+      if (this.voice) this.voice.hold();
+      this.sm.force('listening');
+      this.simulator.start('listening');
+      if (this.voice) this.voice.resumeCommand();
+      return;
+    }
     this.greet(() => {
       this.sm.force('listening');
       this.simulator.start('listening');
@@ -218,7 +242,7 @@ export class Assistant {
         const ok = await this.auth.verify(text);
         bus.emit('ai:result', { text, intent: ok ? 'access_granted' : 'access_denied', reply: '' });
         if (ok) {
-          this.authenticated = true;
+          this._persistAuth(true);
           this.awaitingCode = false;
           this._say(ACCESS_GRANTED, { continueListening: true, cache: true });
         } else {

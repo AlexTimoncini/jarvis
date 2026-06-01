@@ -43,6 +43,12 @@ export class VoiceRecognition {
     this._lastStart = 0;
     this._quickEnds = 0;      // consecutive immediate onend -> backoff
     this._restartTimer = null;
+
+    // While music is playing we STOP the always-on wake scanning: on mobile
+    // every recognition (re)start grabs the audio input session and pauses /
+    // interrupts the music. The user taps the sphere or mic button to talk;
+    // command capture still works (and ducks the music) on demand.
+    this.musicPlaying = false;
   }
 
   get isSupported() {
@@ -98,12 +104,8 @@ export class VoiceRecognition {
 
   stop() {
     this.active = false;
-    this._clearSilence();
-    clearTimeout(this._restartTimer);
-    if (this.rec) {
-      try { this.rec.stop(); } catch (e) { /* noop */ }
-    }
     this.mode = 'wake';
+    this._resetEngine(); // fully tear down so the next start() is clean
     bus.emit('voice:status', { state: 'off' });
   }
 
@@ -168,9 +170,33 @@ export class VoiceRecognition {
   _scheduleRestart() {
     clearTimeout(this._restartTimer);
     if (!this.active || this.held) return;
+    // Suspended during music: don't reacquire the mic for wake scanning.
+    if (this.musicPlaying && this.mode === 'wake') return;
     const base = MIN_RESTART_MS + this._quickEnds * 500;
     const delay = Math.min(base, MAX_BACKOFF_MS);
     this._restartTimer = setTimeout(() => this._startRec(), delay);
+  }
+
+  /**
+   * Tell the recognizer whether music is currently playing. When it is,
+   * we suspend the continuous wake-word scanning (so we stop interrupting
+   * playback) and resume it automatically once the music stops.
+   */
+  setMusicPlaying(on) {
+    const was = this.musicPlaying;
+    this.musicPlaying = !!on;
+    if (this.musicPlaying === was) return;
+    if (this.musicPlaying) {
+      // suspend wake scanning (leave an in-progress command alone)
+      if (this.mode === 'wake') {
+        clearTimeout(this._restartTimer);
+        if (this.rec) { try { this.rec.stop(); } catch (e) { /* noop */ } }
+      }
+    } else if (this.active && !this.held && this.mode === 'wake') {
+      // music ended: resume always-on wake scanning
+      this._quickEnds = 0;
+      this._startRec();
+    }
   }
 
   /** Pause recognition (e.g. while JARVIS speaks) to avoid self-hearing. */
@@ -193,20 +219,54 @@ export class VoiceRecognition {
     this.wakeIndex = 0;
     this.commandText = '';
     this._quickEnds = 0;
+    // While music plays we stay suspended (tap to talk) to avoid grabbing
+    // the mic and interrupting playback.
+    if (this.musicPlaying) {
+      clearTimeout(this._restartTimer);
+      if (this.rec) { try { this.rec.stop(); } catch (e) { /* noop */ } }
+      return;
+    }
     this._startRec();
   }
 
   /**
-   * Resume directly capturing a command (no wake word needed).
+   * Tear down the current recognition instance so the next start() gets a
+   * brand-new engine. SpeechRecognition can wedge on mobile (the mic is
+   * "lost" and never restarts); recreating it reliably reacquires it.
+   */
+  _resetEngine() {
+    clearTimeout(this._restartTimer);
+    this._clearSilence();
+    if (this.rec) {
+      try { this.rec.onstart = this.rec.onresult = this.rec.onerror = this.rec.onend = null; } catch (e) { /* noop */ }
+      try { this.rec.abort(); } catch (e) { /* noop */ }
+      try { this.rec.stop(); } catch (e) { /* noop */ }
+    }
+    this.rec = null;
+    this.running = false;
+    this.starting = false;
+    this._quickEnds = 0;
+  }
+
+  /**
+   * Resume directly capturing a command (no wake word needed). Always
+   * rebuilds the engine so the mic is (re)acquired even if it was lost,
+   * and re-prompts for permission if voice was off.
    * @param {number} grace ms to wait for the user to START speaking.
    */
-  resumeCommand(grace = 5000) {
-    if (!this.active) return;
+  async resumeCommand(grace = 5000) {
     this.held = false;
     this.mode = 'command';
     this.wakeIndex = 0;
     this.commandText = '';
-    this._quickEnds = 0;
+    this._resetEngine();
+    if (!this.active) {
+      const ok = await this._ensurePermission();
+      if (!ok) { bus.emit('voice:status', { state: 'denied' }); return; }
+      this.active = true;
+      bus.emit('voice:status', { state: 'wake' });
+    }
+    this.mode = 'command';
     this._startRec();
     this._armSilence(grace);
   }

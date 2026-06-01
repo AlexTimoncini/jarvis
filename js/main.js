@@ -75,9 +75,16 @@ const widgets = new WidgetManager();
 const assistant = new Assistant({ sm, simulator, widgets, speech: tts, voice, ai, auth, music, library });
 
 // Music lifecycle + Bluetooth transport buttons
-bus.on('music:ended', () => { if (!assistant.musicNext()) widgets.hide('music'); }); // auto-advance (shuffle)
+bus.on('music:ended', () => {
+  if (!assistant.musicNext()) { widgets.hide('music'); voice.setMusicPlaying(false); } // nothing left -> resume wake
+});
 bus.on('music:next', () => assistant.musicNext());
 bus.on('music:prev', () => assistant.musicPrev());
+
+// While music plays, suspend always-on wake scanning so the mic doesn't
+// periodically interrupt playback on mobile (tap the sphere/mic to talk).
+bus.on('music:started', () => voice.setMusicPlaying(true));
+bus.on('music:stopped', () => voice.setMusicPlaying(false));
 
 /* ---------- Mic + voice wiring ---------- */
 // Unlock the audio output contexts on the first user gesture anywhere
