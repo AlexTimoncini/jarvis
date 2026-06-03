@@ -15,6 +15,7 @@ import { Geo } from './core/Geo.js';
 import { Appointments } from './core/Appointments.js';
 import { Push } from './core/Push.js';
 import { Playlists } from './core/Playlists.js';
+import { Notes } from './core/Notes.js';
 import { WidgetManager } from './ui/WidgetManager.js';
 import { Clock } from './ui/Clock.js';
 import { Weather } from './ui/Weather.js';
@@ -44,9 +45,12 @@ const sphere = new SphereRenderer($('#sphere-canvas'));
 const hud = new HudRenderer($('#hud-canvas'));
 const telemetry = new BackgroundTelemetry($('#telemetry-canvas'));
 
+/* ---------- Location (needed by the weather widget below) ---------- */
+const geo = new Geo();
+
 /* ---------- Widgets (content updates even while hidden) ---------- */
 const clock = new Clock($('#clock'));
-new Weather($('#weather'));
+const weather = new Weather($('#weather'), geo);
 const stats = new SystemStats($('#stats'));
 new Links($('#links'));
 const waveform = new Waveform($('#waveform-canvas'), $('[data-wave-label]'));
@@ -60,7 +64,6 @@ const voice = new VoiceRecognition({ lang: 'it-IT' });
 /* ---------- AI brain ---------- */
 const ai = new AI();
 const auth = new Auth();
-const geo = new Geo();
 const appointments = new Appointments();
 const push = new Push();
 
@@ -69,6 +72,7 @@ const music = new MusicPlayer();
 const library = new MusicLibrary();
 library.load();
 const playlists = new Playlists();
+const notes = new Notes();
 const musicWidget = new MusicWidget({
   root: $('#music'),
   canvas: $('#music-eq'),
@@ -85,7 +89,7 @@ const apptWidget = new AppointmentsWidget({
 
 /* ---------- On-demand UI + assistant ---------- */
 const widgets = new WidgetManager();
-const assistant = new Assistant({ sm, simulator, widgets, speech: tts, voice, ai, auth, music, library, playlists, appointments, push, apptWidget });
+const assistant = new Assistant({ sm, simulator, widgets, speech: tts, voice, ai, auth, music, library, playlists, appointments, push, apptWidget, notes, geo, weather });
 
 // Music lifecycle + Bluetooth transport buttons
 bus.on('music:ended', () => {
@@ -125,6 +129,10 @@ bus.on('voice:status', ({ state }) => {
   micBtn.setAttribute('aria-pressed', String(state === 'wake'));
   if (state === 'denied') audioFx.error();
 });
+
+// Hands-free terse commands (e.g. "stop", "avanti", "chiudi") recognized
+// without the wake word, when JARVIS isn't mid-interaction.
+voice.setDirectMatcher((phrase) => assistant.directCommand(phrase));
 
 bus.on('voice:wake', () => {
   assistant.voiceWake(); // greets with a spoken phrase (no beep)
@@ -238,8 +246,29 @@ function frame(t) {
   stats.update(dt, visual.energy);
   waveform.update(dt);
   musicWidget.update(dt);
+  updateSpeedHud(t);
 
   requestAnimationFrame(frame);
+}
+
+/* ---------- Movement speed HUD (from GPS) ---------- */
+const speedEl = $('#speedo');
+const speedValEl = speedEl ? speedEl.querySelector('[data-speed]') : null;
+let _lastSpeedShown = -1;
+let _lastSpeedAt = 0;
+function updateSpeedHud(t) {
+  if (!speedEl || t - _lastSpeedAt < 300) return; // ~3 updates/sec
+  _lastSpeedAt = t;
+  const kmh = geo.speedKmh();
+  if (kmh === null) {
+    speedEl.classList.remove('is-active'); // no GPS speed (e.g. desktop / stationary)
+    return;
+  }
+  speedEl.classList.add('is-active');
+  if (kmh !== _lastSpeedShown) {
+    speedValEl.textContent = String(kmh);
+    _lastSpeedShown = kmh;
+  }
 }
 
 /* ---------- Go ---------- */
@@ -265,4 +294,4 @@ window.addEventListener('keydown', startSensors, { once: true });
 setTimeout(() => tts.warm(FIXED_PHRASES), 2500);
 
 // expose for console experimentation
-window.JARVIS = { sm, director, simulator, assistant, widgets, voice, audioFx, speech, tts, ai, music, library, playlists, geo, appointments, push, visual };
+window.JARVIS = { sm, director, simulator, assistant, widgets, voice, audioFx, speech, tts, ai, music, library, playlists, notes, geo, weather, appointments, push, visual };

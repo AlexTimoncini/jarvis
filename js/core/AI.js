@@ -4,7 +4,7 @@
    rolling conversation history for context. Fails soft so the
    assistant can always say something.
    ============================================================ */
-export const INTENTS = ['conversation', 'standby', 'music', 'appointment', 'note', 'update_access_code'];
+export const INTENTS = ['conversation', 'standby', 'music', 'appointment', 'note', 'update_access_code', 'navigation', 'weather', 'timer'];
 
 export class AI {
   constructor({ endpoint = './server/ai.php', historyLimit = 8 } = {}) {
@@ -27,10 +27,10 @@ export class AI {
 
   /**
    * @param {string} text user utterance
-   * @param {{nowPlaying?:{artist:string,title:string}}} [ctx] extra context
+   * @param {{nowPlaying?:{artist:string,title:string}, speed?:number|null}} [ctx] extra context
    * @returns {Promise<{intent:string, reply:string, error?:string}>}
    */
-  async ask(text, { nowPlaying = null } = {}) {
+  async ask(text, { nowPlaying = null, speed = null } = {}) {
     const utterance = (text || '').trim();
     if (!utterance) return { intent: 'conversation', reply: '' };
 
@@ -38,6 +38,9 @@ export class AI {
       const body = { text: utterance, history: this.history };
       if (nowPlaying && (nowPlaying.artist || nowPlaying.title)) {
         body.nowPlaying = { artist: nowPlaying.artist || '', title: nowPlaying.title || '' };
+      }
+      if (typeof speed === 'number' && isFinite(speed) && speed >= 0) {
+        body.speed = Math.round(speed);
       }
       const res = await fetch(this.endpoint, {
         method: 'POST',
@@ -56,6 +59,19 @@ export class AI {
       const musicAction = typeof data.musicAction === 'string' ? data.musicAction : '';
       const playlistName = typeof data.playlistName === 'string' ? data.playlistName : '';
       const playlistTracks = Array.isArray(data.playlistTracks) ? data.playlistTracks : [];
+      const NOTE_ACTIONS = ['add', 'append', 'read', 'list', 'delete', 'download'];
+      const noteAction = NOTE_ACTIONS.includes(data.noteAction) ? data.noteAction : '';
+      const noteTitle = typeof data.noteTitle === 'string' ? data.noteTitle : '';
+      const noteContent = typeof data.noteContent === 'string' ? data.noteContent : '';
+      const navPlace = typeof data.navPlace === 'string' ? data.navPlace : '';
+      const navDestination = typeof data.navDestination === 'string' ? data.navDestination : '';
+      const navLabel = typeof data.navLabel === 'string' ? data.navLabel : '';
+      const navMode = typeof data.navMode === 'string' ? data.navMode : 'driving';
+      const weatherWhen = typeof data.weatherWhen === 'string' ? data.weatherWhen : 'today';
+      const timerAction = typeof data.timerAction === 'string' ? data.timerAction : '';
+      const timerDatetime = typeof data.timerDatetime === 'string' ? data.timerDatetime : '';
+      const timerLabel = typeof data.timerLabel === 'string' ? data.timerLabel : '';
+      const timerRecurrence = typeof data.timerRecurrence === 'string' ? data.timerRecurrence : 'none';
       const appointmentOps = (Array.isArray(data.appointmentOps) ? data.appointmentOps : []).map((o) => ({
         action: ['add', 'delete', 'list'].includes(o.action) ? o.action : 'add',
         title: typeof o.title === 'string' ? o.title : '',
@@ -70,7 +86,8 @@ export class AI {
       const remembered = Array.isArray(data.remembered) ? data.remembered : [];
       this._push('user', utterance);
       if (intent === 'conversation' && reply) this._push('model', reply);
-      return { intent, reply, accessCode, musicArtist, musicTitle, musicAction, playlistName, playlistTracks, appointmentOps, remembered };
+      return { intent, reply, accessCode, musicArtist, musicTitle, musicAction, playlistName, playlistTracks, appointmentOps, noteAction, noteTitle, noteContent, navPlace, navDestination, navLabel, navMode, weatherWhen,
+        timerAction, timerDatetime, timerLabel, timerRecurrence, remembered };
     } catch (err) {
       return { intent: 'conversation', reply: '', error: err.message };
     }

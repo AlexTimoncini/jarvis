@@ -26,6 +26,8 @@ export class MusicPlayer {
     this.current = null;
     this._bass = 0;
     this._wired = false;
+    this._userVolume = 1;  // 0..1 set by the user; ducking multiplies this
+    this._ducked = false;
 
     this.audio.addEventListener('ended', () => {
       this.current = null;
@@ -89,8 +91,28 @@ export class MusicPlayer {
 
   /** Lower the volume while JARVIS listens/speaks, restore otherwise. */
   duck(on) {
-    this.audio.volume = on ? 0.16 : 1;
+    this._ducked = !!on;
+    this._applyVolume();
   }
+
+  _applyVolume() {
+    const v = this._ducked ? this._userVolume * 0.16 : this._userVolume;
+    this.audio.volume = clamp(v);
+  }
+
+  /** Set the user volume (0..1). @returns {number} the applied volume. */
+  setVolume(v) {
+    this._userVolume = clamp(v);
+    this._applyVolume();
+    return this._userVolume;
+  }
+
+  /** Nudge the volume by a delta (e.g. +0.2 / -0.2). @returns {number} new volume. */
+  bumpVolume(delta) {
+    return this.setVolume(this._userVolume + delta);
+  }
+
+  get volume() { return this._userVolume; }
 
   pause() {
     if (!this.current) return;

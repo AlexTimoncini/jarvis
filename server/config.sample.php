@@ -24,6 +24,14 @@ return [
     // --- Fuso orario per appuntamenti/promemoria ---
     'timezone' => 'Europe/Rome',
 
+    // --- Luoghi per la navigazione vocale ("Jarvis portami a casa") ---
+    // Indirizzi completi come li scriveresti su Google Maps. Puoi aggiungere
+    // QUALSIASI chiave (es. 'genitori', 'palestra'): JARVIS la riconosce a voce.
+    'places' => [
+        'casa'   => '',   // es. 'Via Roma 1, Milano MI'
+        'lavoro' => '',   // es. 'Piazza Duomo, Milano MI'
+    ],
+
     // --- Web Push (notifiche appuntamenti) ---
     // 1) Sul server: `composer install`
     // 2) Apri server/vapid_gen.php nel browser per generare la coppia di chiavi

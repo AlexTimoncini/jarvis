@@ -62,6 +62,14 @@ $nowPlayingBlock = ($npTitle !== '' || $npArtist !== '')
       . "si riferisce a QUESTO brano (es. \"un'altra di questo artista\" = altro brano di \"$npArtist\")."
     : 'Nessun brano in riproduzione al momento.';
 
+// Current movement speed (km/h) from the device GPS, sent by the client.
+$speedKmh = isset($input['speed']) && is_numeric($input['speed']) ? max(0, (float) $input['speed']) : null;
+$speedBlock = $speedKmh === null
+    ? 'Velocità di movimento: non disponibile (GPS senza dato di velocità).'
+    : 'Velocità di movimento attuale dell\'utente: ' . round($speedKmh) . ' km/h'
+      . ($speedKmh < 2 ? ' (fermo).' : '.')
+      . ' Se chiede quanto va veloce / a che velocità, rispondi con questo valore.';
+
 if ($text === '') {
     http_response_code(400);
     echo json_encode(['error' => 'empty text']);
@@ -110,6 +118,19 @@ $musicBlock = count($musicLines)
     : 'Libreria musicale vuota (nessun brano disponibile).';
 
 $userName = $profile['name'] ?: 'Signore';
+
+// ---- saved navigation places (so the model can map "dai miei genitori") ----
+$navPlacesCfg = is_array($cfg['places'] ?? null) ? $cfg['places'] : [];
+$navPlaceLines = [];
+foreach ($navPlacesCfg as $k => $addr) {
+    $addr = trim((string) $addr);
+    if ($addr === '') continue;
+    $navPlaceLines[] = "- $k: $addr";
+}
+$placesBlock = count($navPlaceLines)
+    ? "Luoghi salvati per la navigazione (chiave: indirizzo). Per \"navPlaceKey\" usa la CHIAVE esatta:\n" . implode("\n", $navPlaceLines)
+    : 'Nessun luogo salvato: per la navigazione usa sempre "navDestination".';
+
 $system = <<<SYS
 Sei J.A.R.V.I.S., l'assistente AI personale di Iron Man, in italiano.
 Personalità: cortese, elegante, asciutto, leggermente ironico. Ti rivolgi
@@ -120,6 +141,8 @@ $memoryBlock
 $musicBlock
 
 $nowPlayingBlock
+
+$speedBlock
 
 Compito: per OGNI messaggio dell'utente devi:
 1) Classificare l'INTENZIONE in UNA di queste etichette:
@@ -178,10 +201,53 @@ Compito: per OGNI messaggio dell'utente devi:
      ESEMPIO (se oggi fosse $nowHuman e l'utente dicesse "ricordami il dentista domani
      alle 15:30, avvisami mezz'ora prima"): apptTitle="Dentista",
      apptDatetime="$exTomorrow 15:30", apptRecurrence="none", apptReminders=["-30m"].
-   - "note"        : chiede di scrivere/salvare/scaricare una nota o un testo.
+   - "note"        : QUALSIASI richiesta di prendere/salvare/leggere/elencare/eliminare o
+     SCARICARE una nota, un appunto, una lista, una mappa mentale o idee da raggruppare.
+     Imposta "noteAction" con UNA di queste:
+       * "add"      : crea una NUOVA nota. Genera "noteTitle" (titolo breve, 2-4 parole) e
+                      "noteContent" con il testo PULITO e ORGANIZZATO: se sono piu' voci/idee,
+                      formattale come elenco puntato (una per riga, prefisso "- "); correggi la
+                      punteggiatura ma NON inventare contenuti ne' aggiungere commenti tuoi.
+       * "append"   : AGGIUNGI testo a una nota gia' esistente (raggruppare idee sotto un tema).
+                      "noteTitle" identifica la nota; "noteContent" e' SOLO il nuovo testo.
+       * "read"     : l'utente vuole ASCOLTARE/rileggere una nota. Metti "noteTitle".
+       * "list"     : l'utente chiede QUALI note ha. Lascia gli altri campi note vuoti.
+       * "delete"   : eliminare una nota. Metti "noteTitle".
+       * "download" : SCARICARE/esportare una nota come file .txt. Metti "noteTitle".
+     ESEMPI:
+       "prendi nota della spesa: latte, pane e uova" -> noteAction="add",
+         noteTitle="Spesa", noteContent="- Latte\n- Pane\n- Uova".
+       "aggiungi alle idee del progetto: logo animato" -> noteAction="append",
+         noteTitle="Idee progetto", noteContent="- Logo animato".
+       "scaricami la nota spesa" -> noteAction="download", noteTitle="Spesa".
+       "che note ho?" -> noteAction="list".
+       * "search"   : l'utente CERCA tra le note per ARGOMENTO/significato, non per titolo
+                      esatto ("cosa avevo scritto sul progetto X?", "trova la nota sulle
+                      vacanze", "cerca tra gli appunti il budget"). Metti in "noteTitle"
+                      l'ARGOMENTO/parole chiave della ricerca.
    - "update_access_code": chiede di cambiare/aggiornare/modificare il codice di
      accesso/attivazione. In questo caso estrai il NUOVO codice pronunciato e mettilo
      nel campo "accessCode" (solo la frase del codice, senza parole di contorno).
+   - "navigation"  : l'utente vuole essere PORTATO/navigare verso un luogo
+     ("portami a casa", "navigazione per il lavoro", "portami dai miei genitori",
+     "indicazioni per la stazione", "portami in Via Roma 10"). Imposta:
+       * "navPlaceKey"    : se la destinazione corrisponde a uno dei LUOGHI SALVATI qui
+                            sotto, riporta ESATTAMENTE la sua chiave; altrimenti "".
+       * "navDestination" : SOLO se NON e' un luogo salvato, l'indirizzo o il nome del
+                            luogo come lo scriveresti su Google Maps (es. "Stazione di
+                            Faenza"). Vuoto se hai usato navPlaceKey. NON inventare indirizzi.
+       * "navLabel"       : breve nome parlato della destinazione, utilizzabile dopo la
+                            parola "verso" (es. "casa", "il lavoro", "i tuoi genitori",
+                            "i genitori della tua ragazza", "Marzabotto").
+       * "navMode"        : "driving" (default), "walking", "transit" o "bicycling".
+     $placesBlock
+   - "weather"     : l'utente chiede il METEO/tempo/temperatura/previsioni ("che tempo fa",
+     "che tempo farà domani", "mi serve l'ombrello?", "fa freddo fuori?"). Imposta
+     "weatherWhen": "today" (oggi/adesso), "tomorrow" (domani) o "week" (prossimi giorni).
+   - "timer"       : l'utente vuole un TIMER, un CONTO ALLA ROVESCIA o una SVEGLIA/allarme
+     ("timer di 10 minuti", "svegliami alle 7", "ricordamelo tra mezz'ora", "metti una
+     sveglia per le 6:30", "annulla il timer", "che timer ho?"). NON confonderlo con
+     "appointment" (impegni con un titolo/evento): il timer è un semplice avviso temporale.
    - "conversation": qualsiasi altra cosa (domande, chiacchiere, informazioni, saluti).
 2) Generare "reply":
    - Se intent = "conversation": una risposta naturale, breve (max 2 frasi), in italiano,
@@ -214,7 +280,7 @@ $payload = json_encode([
             'properties' => [
                 'intent' => [
                     'type' => 'string',
-                    'enum' => ['conversation', 'standby', 'music', 'appointment', 'note', 'update_access_code'],
+                    'enum' => ['conversation', 'standby', 'music', 'appointment', 'note', 'update_access_code', 'navigation', 'weather', 'timer'],
                 ],
                 'reply' => ['type' => 'string'],
                 'accessCode' => ['type' => 'string'],
@@ -268,6 +334,41 @@ $payload = json_encode([
                     'description' => 'Anticipi di notifica richiesti dall\'utente, es. ["-1d","-30m"]. Vuoto se non specificati.',
                 ],
                 'apptNotes' => ['type' => 'string'],
+                'noteAction' => [
+                    'type' => 'string',
+                    'enum' => ['add', 'append', 'read', 'list', 'delete', 'download', 'search'],
+                    'description' => 'Azione sulle note quando intent=note, altrimenti "".',
+                ],
+                'noteTitle' => [
+                    'type' => 'string',
+                    'description' => 'Titolo breve della nota (2-4 parole). Usato per identificarla in append/read/delete/download.',
+                ],
+                'noteContent' => [
+                    'type' => 'string',
+                    'description' => 'Contenuto della nota PULITO e ORGANIZZATO (elenco puntato con "- " se piu\' voci). Per "append" e\' solo il nuovo testo. Vuoto per list/read/delete/download.',
+                ],
+                'navPlaceKey' => [
+                    'type' => 'string',
+                    'description' => 'Chiave ESATTA di un luogo salvato (vedi elenco nel prompt) se la destinazione vi corrisponde, altrimenti "".',
+                ],
+                'navDestination' => [
+                    'type' => 'string',
+                    'description' => 'Indirizzo/nome del luogo come su Google Maps quando NON e\' un luogo salvato. Vuoto se hai usato navPlaceKey.',
+                ],
+                'navLabel' => [
+                    'type' => 'string',
+                    'description' => 'Nome parlato breve della destinazione, usabile dopo "verso" (es. "casa", "i tuoi genitori").',
+                ],
+                'navMode' => [
+                    'type' => 'string',
+                    'enum' => ['driving', 'walking', 'transit', 'bicycling'],
+                    'description' => 'Modalita\' di viaggio: driving (default), walking, transit, bicycling.',
+                ],
+                'weatherWhen' => [
+                    'type' => 'string',
+                    'enum' => ['today', 'tomorrow', 'week'],
+                    'description' => 'Periodo del meteo quando intent=weather: today (oggi), tomorrow (domani), week (prossimi giorni).',
+                ],
                 'remember' => [
                     'type' => 'array',
                     'items' => ['type' => 'string'],
@@ -397,16 +498,81 @@ if (($parsed['intent'] ?? '') === 'appointment') {
     }
 }
 
+// ---- navigation: resolve a saved place key to a real address from config ----
+$navDestination = '';
+$navMode = 'driving';
+$navPlace = '';
+$navLabel = '';
+if (($parsed['intent'] ?? '') === 'navigation') {
+    $navMode = (string) ($parsed['navMode'] ?? 'driving');
+    if (!in_array($navMode, ['driving', 'walking', 'transit', 'bicycling'], true)) $navMode = 'driving';
+    $navLabel = trim((string) ($parsed['navLabel'] ?? ''));
+    $key = trim((string) ($parsed['navPlaceKey'] ?? ''));
+    // tolerate home/work aliases the model might still emit
+    if ($key === 'home') $key = 'casa';
+    if ($key === 'work')  $key = 'lavoro';
+    if ($key !== '' && isset($navPlacesCfg[$key]) && trim((string) $navPlacesCfg[$key]) !== '') {
+        $navDestination = trim((string) $navPlacesCfg[$key]);
+        $navPlace = $key;
+    } else {
+        $navPlace = 'other';
+        $navDestination = trim((string) ($parsed['navDestination'] ?? ''));
+    }
+}
+
+// ---- note: dedicated extraction (the big main schema leaves content empty) ----
+$noteAction  = (string) ($parsed['noteAction'] ?? '');
+$noteTitle   = (string) ($parsed['noteTitle'] ?? '');
+$noteContent = (string) ($parsed['noteContent'] ?? '');
+if (($parsed['intent'] ?? '') === 'note') {
+    $n = jarvis_extract_note($text, $model, $apiKey);
+    if ($n) {
+        if ($n['action'] !== '') $noteAction = $n['action'];
+        if ($n['title'] !== '')  $noteTitle = $n['title'];
+        // for add/append the focused call is the source of truth for content
+        if (in_array($noteAction, ['add', 'append'], true)) {
+            $noteContent = $n['content'] !== '' ? $n['content'] : $noteContent;
+        }
+    }
+    if ($noteAction === '') $noteAction = 'add';
+}
+
+// ---- timer / alarm: resolve to an absolute datetime (reuses appt model) ----
+$timerAction = '';
+$timerDatetime = '';
+$timerLabel = '';
+$timerRecurrence = 'none';
+if (($parsed['intent'] ?? '') === 'timer') {
+    $apptModel = $cfg['gemini_appt_model'] ?? 'gemini-2.5-flash';
+    $tm = jarvis_extract_timer($text, $apptModel, $apiKey, $nowHuman, $dateBlock, $todayIso);
+    $timerAction = $tm['action'] ?: 'set';
+    $timerDatetime = $tm['datetime'];
+    $timerLabel = $tm['label'];
+    $timerRecurrence = $tm['recurrence'] ?: 'none';
+}
+
 echo json_encode([
     'intent' => $parsed['intent'],
     'reply'  => (string) ($parsed['reply'] ?? ''),
     'accessCode' => (string) ($parsed['accessCode'] ?? ''),
+    'navPlace' => $navPlace,
+    'navDestination' => $navDestination,
+    'navLabel' => $navLabel,
+    'navMode' => $navMode,
     'musicArtist' => (string) ($parsed['musicArtist'] ?? ''),
     'musicTitle' => (string) ($parsed['musicTitle'] ?? ''),
     'musicAction' => (string) ($parsed['musicAction'] ?? ''),
     'playlistName' => (string) ($parsed['playlistName'] ?? ''),
     'playlistTracks' => is_array($parsed['playlistTracks'] ?? null) ? array_values($parsed['playlistTracks']) : [],
     'appointmentOps' => $appointmentOps,
+    'noteAction' => $noteAction,
+    'noteTitle' => $noteTitle,
+    'noteContent' => $noteContent,
+    'weatherWhen' => (string) ($parsed['weatherWhen'] ?? 'today'),
+    'timerAction' => $timerAction,
+    'timerDatetime' => $timerDatetime,
+    'timerLabel' => $timerLabel,
+    'timerRecurrence' => $timerRecurrence,
     'remembered' => $remembered,
 ], JSON_UNESCAPED_UNICODE);
 
@@ -469,7 +635,7 @@ ASYS;
                                 'recurrence'  => ['type' => 'string', 'enum' => ['none', 'daily', 'weekly', 'monthly', 'yearly']],
                                 'reminders'   => ['type' => 'array', 'items' => ['type' => 'string']],
                                 'notes'       => ['type' => 'string'],
-                                'deleteScope' => ['type' => 'string', 'enum' => ['all', 'date', 'title', '']],
+                                'deleteScope' => ['type' => 'string', 'enum' => ['all', 'date', 'title']],
                                 'deleteDate'  => ['type' => 'string'],
                             ],
                             'required' => ['action'],
@@ -509,4 +675,128 @@ ASYS;
         ];
     }
     return $out;
+}
+
+/**
+ * Focused note extraction. The main (20-field) schema reliably leaves
+ * noteContent empty, so we run a tiny dedicated call where the model only
+ * has to produce action/title/content. Returns ['action','title','content']
+ * or [] on failure.
+ */
+function jarvis_extract_note(string $text, string $model, string $apiKey): array {
+    $sys = <<<NSYS
+Estrai i dettagli per gestire una NOTA testuale dal messaggio dell'utente, in italiano.
+Restituisci SOLO un oggetto JSON: {"action","title","content"}.
+- "action": "add" (nuova nota) | "append" (aggiungi a una nota esistente) | "read"
+  (leggi/rileggi) | "list" (elenca) | "delete" (elimina) | "download" (scarica .txt) |
+  "search" (cerca per argomento/significato, NON per titolo esatto).
+- "title": titolo breve (2-4 parole) che identifica la nota. Per "search" mettici
+  l'ARGOMENTO/parole chiave da cercare. Per "list" puo' essere "".
+- "content": per "add" e "append" il CONTENUTO della nota, PULITO e ORGANIZZATO. Se sono
+  piu' voci/idee, formattale come elenco puntato (una per riga con prefisso "- ").
+  Correggi la punteggiatura ma NON inventare nulla. DEVE essere NON VUOTO per add/append.
+  Per read/list/delete/download lascia "".
+ESEMPI:
+"prendi nota della spesa: latte, pane e uova" -> {"action":"add","title":"Spesa","content":"- Latte\n- Pane\n- Uova"}
+"aggiungi alle idee del progetto: logo animato" -> {"action":"append","title":"Idee progetto","content":"- Logo animato"}
+"leggimi la nota spesa" -> {"action":"read","title":"Spesa","content":""}
+NSYS;
+
+    $payload = json_encode([
+        'system_instruction' => ['parts' => [['text' => $sys]]],
+        'contents' => [['role' => 'user', 'parts' => [['text' => $text]]]],
+        'generationConfig' => [
+            'temperature' => 0.2,
+            'responseMimeType' => 'application/json',
+            'responseSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'action'  => ['type' => 'string', 'enum' => ['add', 'append', 'read', 'list', 'delete', 'download', 'search']],
+                    'title'   => ['type' => 'string'],
+                    'content' => ['type' => 'string'],
+                ],
+                'required' => ['action', 'content'],
+            ],
+        ],
+    ], JSON_UNESCAPED_UNICODE);
+
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models/'
+         . rawurlencode($model) . ':generateContent?key=' . rawurlencode($apiKey);
+    [$code, $res] = gemini_call($url, $payload);
+    if ($code !== 200 || !is_string($res)) return [];
+    $data = json_decode($res, true);
+    $json = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
+    $parsed = json_decode($json, true);
+    if (!is_array($parsed)) return [];
+    $action = (string) ($parsed['action'] ?? '');
+    if (!in_array($action, ['add', 'append', 'read', 'list', 'delete', 'download', 'search'], true)) $action = '';
+    return [
+        'action'  => $action,
+        'title'   => trim((string) ($parsed['title'] ?? '')),
+        'content' => trim((string) ($parsed['content'] ?? '')),
+    ];
+}
+
+/**
+ * Focused timer/alarm extraction. Resolves relative durations ("tra 10
+ * minuti") and clock times ("alle 7") to an ABSOLUTE "YYYY-MM-DD HH:MM".
+ * Returns ['action','datetime','label','recurrence'] (datetime '' on list/cancel).
+ */
+function jarvis_extract_timer(string $text, string $model, string $apiKey, string $nowHuman, string $dateBlock, string $todayIso): array {
+    $sys = <<<TSYS
+Estrai i dettagli di un TIMER / SVEGLIA dal messaggio dell'utente, in italiano.
+ADESSO sono: $nowHuman (fuso Europe/Rome).
+$dateBlock
+Restituisci SOLO un oggetto JSON: {"action","datetime","label","recurrence"}.
+- "action": "set" (imposta un nuovo timer/sveglia) | "cancel" (annulla) | "list" (elenca).
+- "datetime": per "set" e' OBBLIGATORIO e NON deve MAI essere vuoto: l'orario ASSOLUTO
+  in cui deve SUONARE, formato ESATTO "YYYY-MM-DD HH:MM" (24h). Calcola le durate
+  relative rispetto ad ADESSO (es. "tra 10 minuti" = orario attuale + 10 minuti, stesso
+  giorno). Per "alle 7" usa OGGI ($todayIso) se le 07:00 non sono ancora passate,
+  altrimenti il giorno dopo. Per cancel/list metti "".
+- "label": breve etichetta parlata ("pasta", "sveglia", "uscire"); se assente "".
+- "recurrence": "none" di default; "daily" se l'utente dice "ogni giorno"/"tutti i giorni".
+ESEMPI (se ADESSO fosse $todayIso 14:20):
+"timer di 10 minuti per la pasta" -> {"action":"set","datetime":"$todayIso 14:30","label":"pasta","recurrence":"none"}
+"svegliami ogni giorno alle 7" -> {"action":"set","datetime":"$todayIso 07:00","label":"sveglia","recurrence":"daily"}
+"annulla il timer" -> {"action":"cancel","datetime":"","label":"","recurrence":"none"}
+TSYS;
+
+    $payload = json_encode([
+        'system_instruction' => ['parts' => [['text' => $sys]]],
+        'contents' => [['role' => 'user', 'parts' => [['text' => $text]]]],
+        'generationConfig' => [
+            'temperature' => 0.1,
+            'responseMimeType' => 'application/json',
+            'responseSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'action'     => ['type' => 'string', 'enum' => ['set', 'cancel', 'list']],
+                    'datetime'   => ['type' => 'string', 'description' => 'Orario assoluto "YYYY-MM-DD HH:MM" in cui suonare; obbligatorio e non vuoto per action=set.'],
+                    'label'      => ['type' => 'string'],
+                    'recurrence' => ['type' => 'string', 'enum' => ['none', 'daily']],
+                ],
+                'required' => ['action', 'datetime', 'recurrence'],
+            ],
+        ],
+    ], JSON_UNESCAPED_UNICODE);
+
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models/'
+         . rawurlencode($model) . ':generateContent?key=' . rawurlencode($apiKey);
+    [$code, $res] = gemini_call($url, $payload);
+    if ($code !== 200 || !is_string($res)) return ['action' => '', 'datetime' => '', 'label' => '', 'recurrence' => 'none'];
+    $data = json_decode($res, true);
+    $json = $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
+    $parsed = json_decode($json, true);
+    if (!is_array($parsed)) return ['action' => '', 'datetime' => '', 'label' => '', 'recurrence' => 'none'];
+    $action = (string) ($parsed['action'] ?? '');
+    if (!in_array($action, ['set', 'cancel', 'list'], true)) $action = '';
+    $rec = (string) ($parsed['recurrence'] ?? 'none');
+    if (!in_array($rec, ['none', 'daily'], true)) $rec = 'none';
+    return [
+        'action'     => $action,
+        'datetime'   => trim((string) ($parsed['datetime'] ?? '')),
+        'label'      => trim((string) ($parsed['label'] ?? '')),
+        'recurrence' => $rec,
+    ];
 }

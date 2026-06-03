@@ -37,6 +37,11 @@ export class VoiceRecognition {
     this.wakeIndex = 0;
     this.silence = null;
 
+    // Optional matcher: in wake mode, a terse command can be recognized
+    // WITHOUT the wake word. Given the latest spoken phrase it returns the
+    // command text to execute, or null. Set by the app (see Assistant).
+    this.directMatcher = null;
+
     this._permitted = false;
     this.running = false;     // engine currently listening
     this.starting = false;    // start() called, awaiting onstart
@@ -44,15 +49,23 @@ export class VoiceRecognition {
     this._quickEnds = 0;      // consecutive immediate onend -> backoff
     this._restartTimer = null;
 
-    // While music is playing we STOP the always-on wake scanning: on mobile
-    // every recognition (re)start grabs the audio input session and pauses /
-    // interrupts the music. The user taps the sphere or mic button to talk;
-    // command capture still works (and ducks the music) on demand.
+    // Wake-word scanning stays ALWAYS on, including while music plays or is
+    // paused, so the user can say "JARVIS" hands-free at any time. When the
+    // wake word fires, the state machine ducks the music automatically.
     this.musicPlaying = false;
   }
 
   get isSupported() {
     return this.supported;
+  }
+
+  /**
+   * Provide a function that, given the latest spoken phrase, returns a terse
+   * command to run immediately (without the wake word), or null. Enables
+   * hands-free quick commands while idle/scanning.
+   */
+  setDirectMatcher(fn) {
+    this.directMatcher = typeof fn === 'function' ? fn : null;
   }
 
   /**
@@ -170,30 +183,19 @@ export class VoiceRecognition {
   _scheduleRestart() {
     clearTimeout(this._restartTimer);
     if (!this.active || this.held) return;
-    // Suspended during music: don't reacquire the mic for wake scanning.
-    if (this.musicPlaying && this.mode === 'wake') return;
     const base = MIN_RESTART_MS + this._quickEnds * 500;
     const delay = Math.min(base, MAX_BACKOFF_MS);
     this._restartTimer = setTimeout(() => this._startRec(), delay);
   }
 
   /**
-   * Tell the recognizer whether music is currently playing. When it is,
-   * we suspend the continuous wake-word scanning (so we stop interrupting
-   * playback) and resume it automatically once the music stops.
+   * Track whether music is currently playing. Wake-word scanning stays ON
+   * regardless, so "JARVIS" is recognized hands-free during playback and
+   * while paused; we just make sure the engine is running in wake mode.
    */
   setMusicPlaying(on) {
-    const was = this.musicPlaying;
     this.musicPlaying = !!on;
-    if (this.musicPlaying === was) return;
-    if (this.musicPlaying) {
-      // suspend wake scanning (leave an in-progress command alone)
-      if (this.mode === 'wake') {
-        clearTimeout(this._restartTimer);
-        if (this.rec) { try { this.rec.stop(); } catch (e) { /* noop */ } }
-      }
-    } else if (this.active && !this.held && this.mode === 'wake') {
-      // music ended: resume always-on wake scanning
+    if (this.active && !this.held && this.mode === 'wake') {
       this._quickEnds = 0;
       this._startRec();
     }
@@ -219,13 +221,6 @@ export class VoiceRecognition {
     this.wakeIndex = 0;
     this.commandText = '';
     this._quickEnds = 0;
-    // While music plays we stay suspended (tap to talk) to avoid grabbing
-    // the mic and interrupting playback.
-    if (this.musicPlaying) {
-      clearTimeout(this._restartTimer);
-      if (this.rec) { try { this.rec.stop(); } catch (e) { /* noop */ } }
-      return;
-    }
     this._startRec();
   }
 
@@ -277,8 +272,21 @@ export class VoiceRecognition {
     for (let i = 0; i < e.results.length; i++) full += e.results[i][0].transcript + ' ';
     full = full.trim();
     const lower = full.toLowerCase();
+    // latest spoken segment (best signal for an isolated terse command)
+    const last = e.results.length ? (e.results[e.results.length - 1][0].transcript || '').trim() : '';
 
     if (this.mode === 'wake') {
+      // Terse offline commands (no wake word needed), matched on the last phrase.
+      if (this.directMatcher && last) {
+        const direct = this.directMatcher(last);
+        if (direct) {
+          this._clearSilence();
+          this.commandText = '';
+          bus.emit('voice:command', { text: direct });
+          if (this.rec) { try { this.rec.abort(); } catch (e2) { /* noop */ } }
+          return;
+        }
+      }
       const m = lower.match(WAKE);
       if (m) {
         this.mode = 'command';
