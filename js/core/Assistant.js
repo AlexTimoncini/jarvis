@@ -117,7 +117,7 @@ export const FIXED_PHRASES = [
 ];
 
 export class Assistant {
-  constructor({ sm, simulator, widgets, speech = null, voice = null, ai = null, auth = null, music = null, library = null, playlists = null, appointments = null, push = null, apptWidget = null, notes = null, geo = null, weather = null }) {
+  constructor({ sm, simulator, widgets, speech = null, voice = null, ai = null, auth = null, music = null, library = null, playlists = null, appointments = null, push = null, apptWidget = null, notes = null, geo = null, weather = null, mail = null }) {
     this.sm = sm;
     this.simulator = simulator;
     this.widgets = widgets;
@@ -134,6 +134,7 @@ export class Assistant {
     this.notes = notes;     // Notes API client
     this.geo = geo;         // Geo (location + movement speed)
     this.weather = weather; // Weather widget + forecast reporter
+    this.mail = mail;       // Mail (IMAP read-only) client
     this.musicHistory = []; // recently played tracks (for "previous")
     this.queue = [];        // active playlist queue (tracks)
     this.queueIdx = -1;     // position within the queue
@@ -461,6 +462,12 @@ export class Assistant {
     // also fired locally while the app stays open.
     if (result.intent === 'timer') {
       await this._handleTimer(result);
+      return;
+    }
+
+    // Mail: read-only IMAP — unread count, read or summarize the latest.
+    if (result.intent === 'mail') {
+      await this._handleMail(result);
       return;
     }
 
@@ -1113,6 +1120,69 @@ export class Assistant {
       });
       setTimeout(() => { try { ctx.close(); } catch (e) { /* noop */ } }, 1500);
     } catch (e) { /* audio unavailable: the spoken alert still fires */ }
+  }
+
+  /**
+   * Mail intent (read-only IMAP). unread -> count + senders; read -> speak the
+   * latest message; summary -> speak a Gemini summary; list -> recent senders.
+   * Common failures (extension/credentials) get a clear spoken message.
+   */
+  async _handleMail(result) {
+    if (!this.mail) {
+      this._say('La posta non è configurata, Signore.', { continueListening: true, cache: false });
+      return;
+    }
+    const action = result.mailAction || 'unread';
+    this.sm.force('thinking');
+
+    if (action === 'unread') {
+      const r = await this.mail.unread();
+      if (!r || !r.ok) { this._sayMailError(r); return; }
+      if (!r.count) { this._say('Nessuna email non letta, Signore.', { continueListening: false, cache: false }); return; }
+      const items = Array.isArray(r.items) ? r.items.slice(0, 3) : [];
+      const who = items.map((m) => m.fromName).filter(Boolean);
+      const tail = who.length ? ` Le più recenti da ${who.join(', ')}.` : '';
+      const n = r.count === 1 ? 'una email non letta' : `${r.count} email non lette`;
+      this._say(`Ha ${n}, Signore.${tail}`, { continueListening: false, cache: false });
+      return;
+    }
+
+    if (action === 'list') {
+      const r = await this.mail.list();
+      if (!r || !r.ok) { this._sayMailError(r); return; }
+      const items = Array.isArray(r.items) ? r.items.slice(0, 4) : [];
+      if (!items.length) { this._say('La casella è vuota, Signore.', { continueListening: false, cache: false }); return; }
+      const parts = items.map((m) => `${m.fromName}, ${m.subject}`);
+      this._say(`Email recenti, Signore: ${parts.join('; ')}.`, { continueListening: false, cache: false });
+      return;
+    }
+
+    if (action === 'summary') {
+      const r = await this.mail.summary({ unseen: true });
+      if (!r || !r.ok || !r.mail) { this._sayMailError(r); return; }
+      const m = r.mail;
+      const body = (m.summary && m.summary.trim()) ? m.summary : (m.body || '').trim();
+      if (!body) { this._say(`Email da ${m.fromName}, oggetto ${m.subject}. Non sono riuscito a riassumerla, Signore.`, { continueListening: false, cache: false }); return; }
+      this._say(`Email da ${m.fromName}. ${body}`, { continueListening: false, cache: false });
+      return;
+    }
+
+    // read (default for content)
+    const r = await this.mail.read({ unseen: true });
+    if (!r || !r.ok || !r.mail) { this._sayMailError(r); return; }
+    const m = r.mail;
+    const body = (m.body || '').replace(/\s*\n+\s*/g, '. ').trim();
+    const intro = `Email da ${m.fromName}${m.when ? `, ${m.when}` : ''}. Oggetto: ${m.subject}.`;
+    this._say(`${intro} ${body || 'Il corpo è vuoto'}, Signore.`, { continueListening: false, cache: false });
+  }
+
+  /** Speak a friendly message for a mail backend failure. */
+  _sayMailError(r) {
+    const err = (r && r.error) || '';
+    let msg = 'Non riesco ad accedere alla posta, Signore.';
+    if (/extension/i.test(err)) msg = 'Il modulo di posta non è abilitato sul server, Signore.';
+    else if (/not configured|disabled/i.test(err)) msg = 'La posta non è ancora configurata, Signore.';
+    this._say(msg, { continueListening: true, cache: false });
   }
 
   /** Build the best Maps navigation URL for the platform. */

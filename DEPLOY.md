@@ -14,10 +14,14 @@ indicato puoi usare il pannello dell'hosting.
 - **PHP ≥ 8.1** (consigliato 8.2+).
 - Estensioni PHP attive: `curl`, `openssl`, `mbstring`, `json`, e **`gmp`**
   *oppure* **`bcmath`** (servono a `minishlink/web-push` per firmare le notifiche).
-  Consigliata anche `intl` (matching accenti più robusto). Verifica con:
+  Consigliata anche `intl` (matching accenti più robusto). Per la **lettura email**
+  serve l'estensione **`imap`** (altrimenti la funzione mail resta disattivata e JARVIS
+  lo dice). Verifica con:
   ```bash
-  php -m | grep -Ei 'curl|openssl|mbstring|gmp|bcmath|intl'
+  php -m | grep -Ei 'curl|openssl|mbstring|gmp|bcmath|intl|imap'
   ```
+  Se manca `imap`: installala (es. `sudo apt install php-imap && sudo phpenmod imap`,
+  oppure abilitala dal pannello dell'hosting) e riavvia PHP.
 - **HTTPS obbligatorio** (microfono, installazione PWA e Web Push non funzionano
   in HTTP). `mod_rewrite` attivo per il redirect in `.htaccess`.
 - `composer` disponibile (o lo si scarica al passo 2).
@@ -199,6 +203,23 @@ curl -X POST https://tuodominio/server/notes.php \
 # download .txt (verifica header Content-Disposition: attachment):
 curl -D - "https://tuodominio/server/notes.php?action=download&title=Spesa"
 ```
+
+### 9.6b Posta (lettura email via IMAP)
+Richiede l'estensione `imap` e il blocco `'mail'` compilato in `config.php`
+(host/porta/credenziali; per overcover.com: host `mail.overcover.com`, porta 993, SSL).
+```bash
+# quante non lette + mittenti recenti:
+curl -X POST https://tuodominio/server/mail.php \
+  -H 'Content-Type: application/json' -d '{"action":"unread"}'
+# atteso: {"ok":true,"count":N,"items":[...]}
+# leggi / riassumi l'ultima:
+curl -X POST https://tuodominio/server/mail.php -H 'Content-Type: application/json' -d '{"action":"read"}'
+curl -X POST https://tuodominio/server/mail.php -H 'Content-Type: application/json' -d '{"action":"summary"}'
+```
+Errori comuni: `php imap extension not installed` (abilita `imap`), `mail not configured`
+(password mancante in `config.php`), errori di connessione → verifica host/porta o prova
+`'novalidate' => true` se il certificato del server di posta dà problemi.
+La lettura usa `FT_PEEK`: **non** segna i messaggi come letti.
 
 ### 9.7 Web Push end-to-end
 ```bash

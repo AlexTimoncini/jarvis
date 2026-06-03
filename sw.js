@@ -1,5 +1,5 @@
 /* J.A.R.V.I.S. service worker — offline app shell + push reminders. */
-const CACHE = 'jarvis-v11';
+const CACHE = 'jarvis-v12';
 
 const CORE = [
   './',

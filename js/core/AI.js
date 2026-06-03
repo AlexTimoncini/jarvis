@@ -4,7 +4,7 @@
    rolling conversation history for context. Fails soft so the
    assistant can always say something.
    ============================================================ */
-export const INTENTS = ['conversation', 'standby', 'music', 'appointment', 'note', 'update_access_code', 'navigation', 'weather', 'timer'];
+export const INTENTS = ['conversation', 'standby', 'music', 'appointment', 'note', 'update_access_code', 'navigation', 'weather', 'timer', 'mail'];
 
 export class AI {
   constructor({ endpoint = './server/ai.php', historyLimit = 8 } = {}) {
@@ -72,6 +72,7 @@ export class AI {
       const timerDatetime = typeof data.timerDatetime === 'string' ? data.timerDatetime : '';
       const timerLabel = typeof data.timerLabel === 'string' ? data.timerLabel : '';
       const timerRecurrence = typeof data.timerRecurrence === 'string' ? data.timerRecurrence : 'none';
+      const mailAction = typeof data.mailAction === 'string' ? data.mailAction : 'unread';
       const appointmentOps = (Array.isArray(data.appointmentOps) ? data.appointmentOps : []).map((o) => ({
         action: ['add', 'delete', 'list'].includes(o.action) ? o.action : 'add',
         title: typeof o.title === 'string' ? o.title : '',
@@ -87,7 +88,7 @@ export class AI {
       this._push('user', utterance);
       if (intent === 'conversation' && reply) this._push('model', reply);
       return { intent, reply, accessCode, musicArtist, musicTitle, musicAction, playlistName, playlistTracks, appointmentOps, noteAction, noteTitle, noteContent, navPlace, navDestination, navLabel, navMode, weatherWhen,
-        timerAction, timerDatetime, timerLabel, timerRecurrence, remembered };
+        timerAction, timerDatetime, timerLabel, timerRecurrence, mailAction, remembered };
     } catch (err) {
       return { intent: 'conversation', reply: '', error: err.message };
     }

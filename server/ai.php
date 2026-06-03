@@ -248,6 +248,13 @@ Compito: per OGNI messaggio dell'utente devi:
      ("timer di 10 minuti", "svegliami alle 7", "ricordamelo tra mezz'ora", "metti una
      sveglia per le 6:30", "annulla il timer", "che timer ho?"). NON confonderlo con
      "appointment" (impegni con un titolo/evento): il timer è un semplice avviso temporale.
+   - "mail"        : l'utente chiede della POSTA/email ("ho mail nuove?", "quante non
+     lette?", "leggimi l'ultima email", "riassumimi le mail", "controlla la posta").
+     Imposta "mailAction":
+       * "unread"  : quante email non lette / controlla la posta / elenca le non lette.
+       * "read"    : LEGGI il contenuto dell'ultima email.
+       * "summary" : RIASSUMI l'ultima email (o le mail recenti).
+       * "list"    : elenca le email recenti (mittente + oggetto).
    - "conversation": qualsiasi altra cosa (domande, chiacchiere, informazioni, saluti).
 2) Generare "reply":
    - Se intent = "conversation": una risposta naturale, breve (max 2 frasi), in italiano,
@@ -280,7 +287,7 @@ $payload = json_encode([
             'properties' => [
                 'intent' => [
                     'type' => 'string',
-                    'enum' => ['conversation', 'standby', 'music', 'appointment', 'note', 'update_access_code', 'navigation', 'weather', 'timer'],
+                    'enum' => ['conversation', 'standby', 'music', 'appointment', 'note', 'update_access_code', 'navigation', 'weather', 'timer', 'mail'],
                 ],
                 'reply' => ['type' => 'string'],
                 'accessCode' => ['type' => 'string'],
@@ -368,6 +375,11 @@ $payload = json_encode([
                     'type' => 'string',
                     'enum' => ['today', 'tomorrow', 'week'],
                     'description' => 'Periodo del meteo quando intent=weather: today (oggi), tomorrow (domani), week (prossimi giorni).',
+                ],
+                'mailAction' => [
+                    'type' => 'string',
+                    'enum' => ['unread', 'read', 'summary', 'list'],
+                    'description' => 'Azione posta quando intent=mail: unread (non lette), read (leggi ultima), summary (riassumi), list (elenca recenti).',
                 ],
                 'remember' => [
                     'type' => 'array',
@@ -569,6 +581,7 @@ echo json_encode([
     'noteTitle' => $noteTitle,
     'noteContent' => $noteContent,
     'weatherWhen' => (string) ($parsed['weatherWhen'] ?? 'today'),
+    'mailAction' => (string) ($parsed['mailAction'] ?? 'unread'),
     'timerAction' => $timerAction,
     'timerDatetime' => $timerDatetime,
     'timerLabel' => $timerLabel,

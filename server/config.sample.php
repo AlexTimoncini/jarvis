@@ -42,4 +42,20 @@ return [
 
     // Token segreto per autorizzare il cron (curl). Scegline uno lungo a caso.
     'cron_secret' => 'cambia-questo-token-lungo-e-casuale',
+
+    // --- Posta in arrivo (lettura email via IMAP) ---
+    // Richiede l'estensione PHP "imap" abilitata sul server. Trova host/porta
+    // IMAP dal tuo provider (di solito porta 993 SSL). Con Gmail/Workspace usa
+    // host 'imap.gmail.com' e una "password per app".
+    'mail' => [
+        'enabled'    => false,
+        'host'       => '',                  // es. 'mail.tuodominio.com' o 'imap.gmail.com'
+        'port'       => 993,
+        'encryption' => 'ssl',               // 'ssl' | 'tls' | 'none'
+        'novalidate' => false,               // true solo se il certificato da' errori
+        'username'   => '',                  // indirizzo email completo
+        'password'   => '',                  // password della casella (o app password)
+        'mailbox'    => 'INBOX',
+        'max'        => 6,
+    ],
 ];

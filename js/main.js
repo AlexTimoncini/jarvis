@@ -16,6 +16,7 @@ import { Appointments } from './core/Appointments.js';
 import { Push } from './core/Push.js';
 import { Playlists } from './core/Playlists.js';
 import { Notes } from './core/Notes.js';
+import { Mail } from './core/Mail.js';
 import { WidgetManager } from './ui/WidgetManager.js';
 import { Clock } from './ui/Clock.js';
 import { Weather } from './ui/Weather.js';
@@ -73,6 +74,7 @@ const library = new MusicLibrary();
 library.load();
 const playlists = new Playlists();
 const notes = new Notes();
+const mail = new Mail();
 const musicWidget = new MusicWidget({
   root: $('#music'),
   canvas: $('#music-eq'),
@@ -89,7 +91,7 @@ const apptWidget = new AppointmentsWidget({
 
 /* ---------- On-demand UI + assistant ---------- */
 const widgets = new WidgetManager();
-const assistant = new Assistant({ sm, simulator, widgets, speech: tts, voice, ai, auth, music, library, playlists, appointments, push, apptWidget, notes, geo, weather });
+const assistant = new Assistant({ sm, simulator, widgets, speech: tts, voice, ai, auth, music, library, playlists, appointments, push, apptWidget, notes, geo, weather, mail });
 
 // Music lifecycle + Bluetooth transport buttons
 bus.on('music:ended', () => {
@@ -294,4 +296,4 @@ window.addEventListener('keydown', startSensors, { once: true });
 setTimeout(() => tts.warm(FIXED_PHRASES), 2500);
 
 // expose for console experimentation
-window.JARVIS = { sm, director, simulator, assistant, widgets, voice, audioFx, speech, tts, ai, music, library, playlists, notes, geo, weather, appointments, push, visual };
+window.JARVIS = { sm, director, simulator, assistant, widgets, voice, audioFx, speech, tts, ai, music, library, playlists, notes, mail, geo, weather, appointments, push, visual };
