@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { visual } from '../core/VisualState.js';
 import { clamp } from '../core/util.js';
+import { dprCap, lowPower } from '../core/device.js';
 
 const RADIUS = 1.0;
 
@@ -187,11 +188,11 @@ export class SphereRenderer {
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       alpha: true,
-      antialias: window.devicePixelRatio < 2,
+      antialias: !lowPower && window.devicePixelRatio < 2,
       powerPreference: 'high-performance',
     });
     this.renderer.setClearColor(0x000000, 0);
-    this.dprCap = Math.min(window.devicePixelRatio || 1, 2);
+    this.dprCap = dprCap;
     this.renderer.setPixelRatio(this.dprCap);
 
     this.scene = new THREE.Scene();
@@ -233,7 +234,8 @@ export class SphereRenderer {
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    this.core = new THREE.Mesh(new THREE.SphereGeometry(RADIUS * 0.62, 48, 48), coreMat);
+    const coreSeg = lowPower ? 28 : 48;
+    this.core = new THREE.Mesh(new THREE.SphereGeometry(RADIUS * 0.62, coreSeg, coreSeg), coreMat);
     this.root.add(this.core);
 
     // Arc-reactor "V" at the very center (camera-facing billboard)
@@ -282,14 +284,14 @@ export class SphereRenderer {
         color: 0x00e5ff, transparent: true, opacity: 0.6,
         blending: THREE.AdditiveBlending, depthWrite: false,
       });
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(d.r, d.t, 8, 120), mat);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(d.r, d.t, 8, lowPower ? 64 : 120), mat);
       ring.rotation.set(...d.rot);
       this.root.add(ring);
       this.rings.push(ring);
     }
 
     // Particle halo
-    const COUNT = 900;
+    const COUNT = lowPower ? 320 : 900;
     const positions = new Float32Array(COUNT * 3);
     for (let i = 0; i < COUNT; i++) {
       const r = RADIUS * (1.05 + Math.random() * 1.1);

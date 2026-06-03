@@ -7,12 +7,13 @@
    ============================================================ */
 import { visual } from '../core/VisualState.js';
 import { TAU, rgbToCss, clamp } from '../core/util.js';
+import { dprCap } from '../core/device.js';
 
 export class HudRenderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = dprCap;
     this.t = 0;
     this.rot = 0;     // segmented ring rotation
     this.scanAngle = 0;

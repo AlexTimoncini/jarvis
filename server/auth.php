@@ -46,8 +46,41 @@ function jarvis_norm(string $s): string {
     return trim($s);
 }
 
+/**
+ * Tolerant spoken-code match. Mobile speech recognition mis-hears words
+ * ("party" -> "parti", "casa" -> "cassa", missing/extra words), so we accept:
+ *   - exact normalized match, OR
+ *   - small global typo distance (<=25% of length), OR
+ *   - per-word match where every expected word is heard closely enough.
+ */
+function jarvis_match(string $spoken, string $expected): bool {
+    $a = jarvis_norm($spoken);
+    $b = jarvis_norm($expected);
+    if ($a === '' || $b === '') return false;
+    if ($a === $b) return true;
+
+    // global fuzzy distance
+    $max = max(strlen($a), strlen($b));
+    if ($max > 0 && $max <= 255 && levenshtein($a, $b) / $max <= 0.25) return true;
+
+    // per-word: each expected word must appear (closely) in the spoken text
+    $want = array_values(array_filter(explode(' ', $b)));
+    $got  = array_values(array_filter(explode(' ', $a)));
+    if (!$want) return false;
+    foreach ($want as $w) {
+        $hit = false;
+        foreach ($got as $g) {
+            $m = max(strlen($w), strlen($g));
+            $tol = $m <= 4 ? 1 : 2; // short words: 1 typo, longer: 2
+            if ($m <= 255 && levenshtein($w, $g) <= $tol) { $hit = true; break; }
+        }
+        if (!$hit) return false;
+    }
+    return true;
+}
+
 if ($action === 'verify') {
-    $ok = $current !== '' && jarvis_norm($code) === jarvis_norm($current);
+    $ok = jarvis_match($code, $current);
     echo json_encode(['ok' => $ok]);
     exit;
 }

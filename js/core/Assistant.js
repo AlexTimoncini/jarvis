@@ -5,6 +5,7 @@
    "ASK" buttons; tomorrow by the AI/server.
    ============================================================ */
 import { bus } from './EventBus.js';
+import { upcomingAppointments } from './Appointments.js';
 
 /** Topic -> widget that should appear when that topic is requested. */
 export const TOPIC_WIDGET = {
@@ -80,7 +81,7 @@ export const FIXED_PHRASES = [
 ];
 
 export class Assistant {
-  constructor({ sm, simulator, widgets, speech = null, voice = null, ai = null, auth = null, music = null, library = null }) {
+  constructor({ sm, simulator, widgets, speech = null, voice = null, ai = null, auth = null, music = null, library = null, playlists = null, appointments = null, push = null, apptWidget = null }) {
     this.sm = sm;
     this.simulator = simulator;
     this.widgets = widgets;
@@ -90,7 +91,13 @@ export class Assistant {
     this.auth = auth;
     this.music = music;     // MusicPlayer
     this.library = library; // MusicLibrary
+    this.playlists = playlists; // Playlists API client
+    this.appointments = appointments; // Appointments API client
+    this.push = push;       // Web Push registration
+    this.apptWidget = apptWidget; // upcoming-reminders HUD widget
     this.musicHistory = []; // recently played tracks (for "previous")
+    this.queue = [];        // active playlist queue (tracks)
+    this.queueIdx = -1;     // position within the queue
     // Access session persists across reloads / PWA restarts: once unlocked,
     // JARVIS won't ask for the code again on this device.
     this.authenticated = Assistant._loadAuth();
@@ -260,7 +267,10 @@ export class Assistant {
     this.sm.force('thinking');
 
     let result = { intent: 'conversation', reply: '' };
-    if (this.ai) result = await this.ai.ask(text);
+    if (this.ai) {
+      const nowPlaying = this.music && this.music.current ? this.music.current : null;
+      result = await this.ai.ask(text, { nowPlaying });
+    }
     bus.emit('ai:result', {
       text,
       intent: result.intent,
@@ -279,6 +289,12 @@ export class Assistant {
     // Music: JARVIS stays silent and just drives the player + widget.
     if (result.intent === 'music') {
       this._handleMusic(result, text);
+      return;
+    }
+
+    // Appointment: save it server-side; the cron + Web Push deliver reminders.
+    if (result.intent === 'appointment') {
+      await this._handleAppointment(result);
       return;
     }
 
@@ -327,6 +343,12 @@ export class Assistant {
   _handleMusic(result, utterance = '') {
     const action = result.musicAction || (result.musicStop ? 'stop' : 'play');
 
+    // ---- playlist management (these may speak a short confirmation) ----
+    if (action && action.indexOf('playlist_') === 0) {
+      this._handlePlaylist(action, result, utterance);
+      return;
+    }
+
     if (action === 'stop') { this.musicStop(); this._idleQuiet(); return; }
     if (action === 'pause') { if (this.music) this.music.pause(); this._idleQuiet(); return; }
     if (action === 'resume') {
@@ -334,7 +356,13 @@ export class Assistant {
       this._idleQuiet();
       return;
     }
-    if (action === 'next' || action === 'shuffle') {
+    if (action === 'shuffle') {
+      this._clearQueue(); // break out of any playlist into free shuffle
+      if (this.musicNext()) this._idleQuiet();
+      else this._say(MUSIC_NOT_FOUND, { continueListening: true, cache: true });
+      return;
+    }
+    if (action === 'next') {
       if (this.musicNext()) this._idleQuiet();
       else this._say(MUSIC_NOT_FOUND, { continueListening: true, cache: true });
       return;
@@ -343,6 +371,13 @@ export class Assistant {
       if (this.musicPrev()) this._idleQuiet();
       else this._say(MUSIC_NOT_FOUND, { continueListening: true, cache: true });
       return;
+    }
+
+    // "un'altra di questo artista": same artist, different track
+    if (result.musicArtist && !result.musicTitle && this.library && this.music && this.music.current) {
+      const cur = this.music.current.file;
+      const sameArtist = this.library.byArtist(result.musicArtist, cur);
+      if (sameArtist) { this.playTrack(sameArtist); this._idleQuiet(); return; }
     }
 
     // play: a specific request, or generic -> random fallback
@@ -354,9 +389,85 @@ export class Assistant {
     else this._say(MUSIC_NOT_FOUND, { continueListening: true, cache: true });
   }
 
+  /**
+   * Playlist actions: play / create / add / remove / delete / list.
+   * Playing is silent (like music); management speaks a short confirmation.
+   */
+  async _handlePlaylist(action, result, utterance = '') {
+    if (!this.playlists || !this.library) {
+      this._say('Le playlist non sono disponibili, Signore.', { continueListening: true, cache: false });
+      return;
+    }
+    const name = (result.playlistName || '').trim();
+    const picks = Array.isArray(result.playlistTracks) ? result.playlistTracks : [];
+
+    if (action === 'playlist_list') {
+      const all = await this.playlists.list();
+      if (!all.length) { this._say('Non ha ancora nessuna playlist, Signore.', { continueListening: false, cache: false }); return; }
+      const names = all.map((p) => p.name).join(', ');
+      this._say(`Le sue playlist, Signore: ${names}.`, { continueListening: false, cache: false });
+      return;
+    }
+
+    if (!name) {
+      this._say('Non ho colto il nome della playlist, Signore.', { continueListening: true, cache: false });
+      return;
+    }
+
+    if (action === 'playlist_play') {
+      const pl = await this.playlists.get(name);
+      if (!pl || !Array.isArray(pl.tracks) || !pl.tracks.length) {
+        this._say(`Non trovo la playlist ${name}, Signore.`, { continueListening: true, cache: false });
+        return;
+      }
+      this._playQueue(pl.tracks);
+      this._idleQuiet();
+      return;
+    }
+
+    if (action === 'playlist_delete') {
+      const r = await this.playlists.delete(name);
+      if (r && r.ok) this._say(`Playlist ${name} eliminata, Signore.`, { continueListening: false, cache: false });
+      else this._say(`Non trovo la playlist ${name}, Signore.`, { continueListening: true, cache: false });
+      return;
+    }
+
+    // create / add / remove all work on a resolved track list
+    const tracks = this.library.resolveMany(picks.length ? picks : [utterance]);
+
+    if (action === 'playlist_remove') {
+      const titles = picks.map((p) => (typeof p === 'string' ? p : (p && p.title) || '')).filter(Boolean);
+      const r = await this.playlists.remove(name, {
+        files: tracks.map((t) => t.file),
+        titles,
+      });
+      const n = r && r.playlist ? (r.playlist.tracks || []).length : 0;
+      if (r && r.ok) this._say(`Aggiornata la playlist ${name}: ${n} brani, Signore.`, { continueListening: false, cache: false });
+      else this._say(`Non trovo la playlist ${name}, Signore.`, { continueListening: true, cache: false });
+      return;
+    }
+
+    if (!tracks.length) {
+      this._say('Non ho riconosciuto i brani da inserire, Signore.', { continueListening: true, cache: false });
+      return;
+    }
+
+    const r = action === 'playlist_add'
+      ? await this.playlists.add(name, tracks)
+      : await this.playlists.create(name, tracks);
+    if (r && r.ok) {
+      const n = r.playlist ? (r.playlist.tracks || []).length : tracks.length;
+      const verb = action === 'playlist_add' ? 'Aggiornata' : 'Creata';
+      this._say(`${verb} la playlist ${name} con ${n} brani, Signore.`, { continueListening: false, cache: false });
+    } else {
+      this._say(`Non sono riuscito a salvare la playlist ${name}, Signore.`, { continueListening: true, cache: false });
+    }
+  }
+
   /** Play a specific track, remembering the previous one for "prev". */
-  playTrack(track) {
+  playTrack(track, { keepQueue = false } = {}) {
     if (!track || !this.music) return;
+    if (!keepQueue) this._clearQueue();
     if (this.music.current) {
       this.musicHistory.push(this.music.current);
       if (this.musicHistory.length > 50) this.musicHistory.shift();
@@ -365,9 +476,36 @@ export class Assistant {
     this.widgets.show('music');
   }
 
-  /** Play a random track (shuffle / skip). @returns {boolean} played */
+  /** Start playing a queue of tracks (a playlist). */
+  _playQueue(tracks) {
+    this.queue = (tracks || []).filter((t) => t && t.file);
+    this.queueIdx = 0;
+    if (this.queue.length) this.playTrack(this.queue[0], { keepQueue: true });
+  }
+
+  _clearQueue() {
+    this.queue = [];
+    this.queueIdx = -1;
+  }
+
+  /**
+   * Advance playback: within an active playlist queue step to the next
+   * track; otherwise play a random one (shuffle / skip).
+   * @returns {boolean} played
+   */
   musicNext() {
-    if (!this.music || !this.library) return false;
+    if (!this.music) return false;
+    // queued playlist: advance to the next track in order
+    if (this.queue.length && this.queueIdx >= 0) {
+      if (this.queueIdx < this.queue.length - 1) {
+        this.queueIdx++;
+        this.playTrack(this.queue[this.queueIdx], { keepQueue: true });
+        return true;
+      }
+      this._clearQueue(); // playlist finished -> stop here
+      return false;
+    }
+    if (!this.library) return false;
     const cur = this.music.current && this.music.current.file;
     const t = this.library.random(cur);
     if (!t) return false;
@@ -388,8 +526,154 @@ export class Assistant {
 
   /** Stop playback and hide the widget. */
   musicStop() {
+    this._clearQueue();
     if (this.music) this.music.stop();
     this.widgets.hide('music');
+  }
+
+  /**
+   * Appointment intent: add / list / delete. Add persists server-side (cron +
+   * Web Push deliver reminders); list speaks the upcoming ones; delete removes
+   * a matching one. The HUD widget mirrors the upcoming reminders.
+   */
+  async _handleAppointment(result) {
+    const ops = Array.isArray(result.appointmentOps) ? result.appointmentOps : [];
+    if (!this.appointments) {
+      this._say('L\u2019agenda non \u00e8 disponibile, Signore.', { continueListening: true, cache: false });
+      return;
+    }
+    if (!ops.length) {
+      this._say('Non ho colto i dettagli dell\u2019impegno, Signore.', { continueListening: true, cache: false });
+      return;
+    }
+
+    // Pure "che impegni ho?" request.
+    if (ops.length === 1 && ops[0].action === 'list') { await this._handleApptList(); return; }
+
+    // Execute every operation in order, collecting spoken clauses.
+    const clauses = [];
+    let wantsList = false;
+    for (const op of ops) {
+      if (op.action === 'list') { wantsList = true; continue; }
+      const clause = op.action === 'delete'
+        ? await this._apptDeleteOp(op)
+        : await this._apptAddOp(op);
+      if (clause) clauses.push(clause);
+    }
+
+    if (this.push) this.push.enable(); // ensure this device can receive reminders
+    this._refreshApptWidget();
+
+    if (wantsList) {
+      const listClause = await this._apptListClause();
+      if (listClause) clauses.push(listClause);
+    }
+    if (!clauses.length) {
+      this._say('Non sono riuscito a completare la richiesta, Signore.', { continueListening: true, cache: false });
+      return;
+    }
+    this._say(`${clauses.join('. ')}, Signore.`, { continueListening: false, cache: false });
+  }
+
+  /** Add one appointment; returns a spoken clause (or '' on failure). */
+  async _apptAddOp(op) {
+    const title = (op.title || '').trim();
+    const datetime = (op.datetime || '').trim();
+    if (!title || !datetime) return '';
+    const r = await this.appointments.add({
+      title,
+      datetime,
+      all_day: !!op.allDay,
+      recurrence: op.recurrence || 'none',
+      reminders: Array.isArray(op.reminders) ? op.reminders : [],
+      notes: op.notes || '',
+    });
+    if (!(r && r.ok)) return '';
+    const appt = r.appointment || { title, datetime, all_day: op.allDay, recurrence: op.recurrence };
+    const when = this._whenText(appt.datetime, appt.all_day);
+    const rec = { daily: ' ogni giorno', weekly: ' ogni settimana', monthly: ' ogni mese', yearly: ' ogni anno' }[appt.recurrence] || '';
+    return `Fissato ${appt.title} per ${when}${rec}`;
+  }
+
+  /** Delete appointments (all / by date / by title); returns a spoken clause. */
+  async _apptDeleteOp(op) {
+    const scope = op.deleteScope || (op.deleteDate ? 'date' : (op.title ? 'title' : ''));
+    if (scope === 'all') {
+      const r = await this.appointments.deleteAll();
+      return (r && r.deleted) ? 'Cancellati tutti gli impegni' : 'Non c\u2019erano impegni da cancellare';
+    }
+    if (scope === 'date' && op.deleteDate) {
+      const r = await this.appointments.deleteByDate(op.deleteDate);
+      const label = this._dayLabel(op.deleteDate);
+      return (r && r.deleted) ? `Cancellati gli impegni di ${label}` : `Non ha impegni ${label}`;
+    }
+    const title = (op.title || '').trim();
+    if (!title) return '';
+    const r = await this.appointments.deleteByTitle(title);
+    if (r && r.deleted) {
+      const t = (r.titles && r.titles[0]) || title;
+      return r.deleted > 1 ? `Cancellati ${r.deleted} impegni` : `Cancellato ${t}`;
+    }
+    return `Non trovo ${title} in agenda`;
+  }
+
+  /** Speak (and show) the next few upcoming reminders. */
+  async _handleApptList() {
+    const clause = await this._apptListClause();
+    if (!clause) {
+      this._say('Non ha impegni in programma, Signore.', { continueListening: false, cache: false });
+      return;
+    }
+    this._say(`${clause}, Signore.`, { continueListening: false, cache: false });
+  }
+
+  /** Build the spoken upcoming-reminders clause and reveal the widget. */
+  async _apptListClause() {
+    const appts = await this.appointments.list();
+    const up = upcomingAppointments(appts, 3);
+    this._refreshApptWidget();
+    if (!up.length) return '';
+    if (this.apptWidget) this.widgets.show('appointments', 18000);
+    const parts = up.map(({ appt, occ }) => `${appt.title}, ${this._whenTextDate(occ, appt.all_day)}`);
+    const lead = up.length === 1 ? 'Ha un impegno in programma' : `Ha ${up.length} impegni in programma`;
+    return `${lead}: ${parts.join('; ')}`;
+  }
+
+  _refreshApptWidget() {
+    if (this.apptWidget && this.apptWidget.refresh) this.apptWidget.refresh();
+  }
+
+  /** Italian spoken date from a "YYYY-MM-DD HH:MM" string. */
+  _whenText(datetime, allDay) {
+    const d = new Date(String(datetime).replace(' ', 'T'));
+    if (isNaN(d)) return datetime;
+    return this._whenTextDate(d, allDay);
+  }
+
+  /** Italian spoken date from a Date; omits the time for all-day events. */
+  _whenTextDate(date, allDay) {
+    try {
+      const opts = allDay
+        ? { weekday: 'long', day: 'numeric', month: 'long' }
+        : { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' };
+      let s = new Intl.DateTimeFormat('it-IT', opts).format(date);
+      if (!allDay) s = s.replace(',', ' alle');
+      return s;
+    } catch (e) { return ''; }
+  }
+
+  /** "oggi" / "domani" / "il 10 giugno" for a "YYYY-MM-DD" date. */
+  _dayLabel(dateYmd) {
+    const m = String(dateYmd).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return 'quel giorno';
+    const d = new Date(+m[1], +m[2] - 1, +m[3]);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return 'oggi';
+    const tom = new Date(now); tom.setDate(now.getDate() + 1);
+    if (d.toDateString() === tom.toDateString()) return 'domani';
+    try {
+      return 'il ' + new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'long' }).format(d);
+    } catch (e) { return 'quel giorno'; }
   }
 
   /** Return to idle without speaking (used after starting/stopping music). */

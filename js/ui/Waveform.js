@@ -1,13 +1,14 @@
 /* Waveform widget - audio visualizer reacting to VisualState.level. */
 import { visual } from '../core/VisualState.js';
 import { rgbToCss, clamp } from '../core/util.js';
+import { dprCap } from '../core/device.js';
 
 export class Waveform {
   constructor(canvas, labelEl) {
     this.canvas = canvas;
     this.label = labelEl;
     this.ctx = canvas.getContext('2d');
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = dprCap;
     this.bars = 40;
     this.values = new Array(this.bars).fill(0);
     this.phase = 0;

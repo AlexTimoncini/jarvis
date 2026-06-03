@@ -1,0 +1,3 @@
+# Personal data (appointments, push subscriptions): never serve directly.
+Require all denied
+Deny from all

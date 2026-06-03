@@ -33,6 +33,46 @@ export class MusicLibrary {
     return this.tracks.length === 0;
   }
 
+  /** A random track by the given artist (excluding one file), or null. */
+  byArtist(artist = '', exceptFile = null) {
+    const nArtist = norm(artist);
+    if (!nArtist) return null;
+    const pool = this.tracks.filter((t) => {
+      if (exceptFile && t.file === exceptFile) return false;
+      const ta = norm(t.artist);
+      return ta === nArtist || ta.includes(nArtist) || nArtist.includes(ta);
+    });
+    if (!pool.length) return null;
+    return pool[(Math.random() * pool.length) | 0];
+  }
+
+  /**
+   * Resolve a list of {artist,title} (or "Artist - Title" strings) into
+   * concrete library tracks {artist,title,file}. Unresolved items are dropped.
+   */
+  resolveMany(items = []) {
+    const out = [];
+    const seen = new Set();
+    for (const it of items) {
+      let artist = '';
+      let title = '';
+      let raw = '';
+      if (typeof it === 'string') {
+        raw = it;
+        const parts = it.split(/\s+[-–—]\s+/);
+        if (parts.length >= 2) { artist = parts[0]; title = parts.slice(1).join(' - '); }
+        else { title = it; }
+      } else if (it && typeof it === 'object') {
+        artist = it.artist || '';
+        title = it.title || '';
+        raw = `${artist} ${title}`;
+      }
+      const t = this.resolve(artist, title, raw);
+      if (t && !seen.has(t.file)) { seen.add(t.file); out.push(t); }
+    }
+    return out;
+  }
+
   /** Pick a random track (used for generic "play music" / next). */
   random(exceptFile = null) {
     const pool = exceptFile ? this.tracks.filter((t) => t.file !== exceptFile) : this.tracks;

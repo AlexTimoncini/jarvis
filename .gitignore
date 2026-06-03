@@ -6,6 +6,11 @@ server/config.php
 server/profile.json
 server/cache/
 
+# Personal data (appointments, push subscriptions) & composer deps
+server/data/*.json
+server/vendor/
+composer.lock
+
 # Music library: keep the structure, ignore the (large) audio files & manifest
 music/**/*.mp3
 music/**/*.m4a

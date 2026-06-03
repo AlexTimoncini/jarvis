@@ -27,17 +27,22 @@ export class AI {
 
   /**
    * @param {string} text user utterance
+   * @param {{nowPlaying?:{artist:string,title:string}}} [ctx] extra context
    * @returns {Promise<{intent:string, reply:string, error?:string}>}
    */
-  async ask(text) {
+  async ask(text, { nowPlaying = null } = {}) {
     const utterance = (text || '').trim();
     if (!utterance) return { intent: 'conversation', reply: '' };
 
     try {
+      const body = { text: utterance, history: this.history };
+      if (nowPlaying && (nowPlaying.artist || nowPlaying.title)) {
+        body.nowPlaying = { artist: nowPlaying.artist || '', title: nowPlaying.title || '' };
+      }
       const res = await fetch(this.endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: utterance, history: this.history }),
+        body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.error) {
@@ -49,10 +54,23 @@ export class AI {
       const musicArtist = typeof data.musicArtist === 'string' ? data.musicArtist : '';
       const musicTitle = typeof data.musicTitle === 'string' ? data.musicTitle : '';
       const musicAction = typeof data.musicAction === 'string' ? data.musicAction : '';
+      const playlistName = typeof data.playlistName === 'string' ? data.playlistName : '';
+      const playlistTracks = Array.isArray(data.playlistTracks) ? data.playlistTracks : [];
+      const appointmentOps = (Array.isArray(data.appointmentOps) ? data.appointmentOps : []).map((o) => ({
+        action: ['add', 'delete', 'list'].includes(o.action) ? o.action : 'add',
+        title: typeof o.title === 'string' ? o.title : '',
+        datetime: typeof o.datetime === 'string' ? o.datetime : '',
+        allDay: !!o.allDay,
+        recurrence: typeof o.recurrence === 'string' ? o.recurrence : 'none',
+        reminders: Array.isArray(o.reminders) ? o.reminders : [],
+        notes: typeof o.notes === 'string' ? o.notes : '',
+        deleteScope: typeof o.deleteScope === 'string' ? o.deleteScope : '',
+        deleteDate: typeof o.deleteDate === 'string' ? o.deleteDate : '',
+      }));
       const remembered = Array.isArray(data.remembered) ? data.remembered : [];
       this._push('user', utterance);
       if (intent === 'conversation' && reply) this._push('model', reply);
-      return { intent, reply, accessCode, musicArtist, musicTitle, musicAction, remembered };
+      return { intent, reply, accessCode, musicArtist, musicTitle, musicAction, playlistName, playlistTracks, appointmentOps, remembered };
     } catch (err) {
       return { intent: 'conversation', reply: '', error: err.message };
     }

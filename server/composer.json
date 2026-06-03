@@ -1,0 +1,11 @@
+{
+    "name": "jarvis/server",
+    "description": "JARVIS server: Web Push notifications for appointments.",
+    "require": {
+        "php": ">=8.0",
+        "minishlink/web-push": "^9.0"
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}

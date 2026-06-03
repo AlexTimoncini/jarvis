@@ -5,6 +5,7 @@
 import { bus } from '../core/EventBus.js';
 import { rgbToCss, clamp } from '../core/util.js';
 import { visual } from '../core/VisualState.js';
+import { dprCap } from '../core/device.js';
 
 export class MusicWidget {
   constructor({ root, canvas, titleEl, artistEl, player }) {
@@ -14,7 +15,7 @@ export class MusicWidget {
     this.artistEl = artistEl;
     this.player = player;
     this.ctx = canvas.getContext('2d');
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = dprCap;
     this.bars = 28;
     this.values = new Array(this.bars).fill(0);
     this.resize();

@@ -12,6 +12,9 @@ import { Assistant, FIXED_PHRASES } from './core/Assistant.js';
 import { AI } from './core/AI.js';
 import { Auth } from './core/Auth.js';
 import { Geo } from './core/Geo.js';
+import { Appointments } from './core/Appointments.js';
+import { Push } from './core/Push.js';
+import { Playlists } from './core/Playlists.js';
 import { WidgetManager } from './ui/WidgetManager.js';
 import { Clock } from './ui/Clock.js';
 import { Weather } from './ui/Weather.js';
@@ -19,6 +22,7 @@ import { SystemStats } from './ui/SystemStats.js';
 import { Links } from './ui/Links.js';
 import { Waveform } from './ui/Waveform.js';
 import { MusicWidget } from './ui/MusicWidget.js';
+import { AppointmentsWidget } from './ui/AppointmentsWidget.js';
 import { Interaction } from './input/Interaction.js';
 import { VoiceRecognition } from './input/VoiceRecognition.js';
 import { SpeakingSimulator } from './audio/SpeakingSimulator.js';
@@ -57,11 +61,14 @@ const voice = new VoiceRecognition({ lang: 'it-IT' });
 const ai = new AI();
 const auth = new Auth();
 const geo = new Geo();
+const appointments = new Appointments();
+const push = new Push();
 
 /* ---------- Music ---------- */
 const music = new MusicPlayer();
 const library = new MusicLibrary();
 library.load();
+const playlists = new Playlists();
 const musicWidget = new MusicWidget({
   root: $('#music'),
   canvas: $('#music-eq'),
@@ -70,9 +77,15 @@ const musicWidget = new MusicWidget({
   player: music,
 });
 
+const apptWidget = new AppointmentsWidget({
+  root: $('#appointments'),
+  listEl: $('[data-appt-list]'),
+  appointments,
+});
+
 /* ---------- On-demand UI + assistant ---------- */
 const widgets = new WidgetManager();
-const assistant = new Assistant({ sm, simulator, widgets, speech: tts, voice, ai, auth, music, library });
+const assistant = new Assistant({ sm, simulator, widgets, speech: tts, voice, ai, auth, music, library, playlists, appointments, push, apptWidget });
 
 // Music lifecycle + Bluetooth transport buttons
 bus.on('music:ended', () => {
@@ -239,6 +252,9 @@ runBoot();
 function startSensors() {
   if (!voice.active) voice.start();   // prompts for mic, then listens continuously
   geo.request();                      // prompts for location
+  // If already unlocked on this device, register for push reminders now.
+  if (assistant.authenticated && push.supported) push.enable();
+  apptWidget.refresh(); // preload upcoming reminders into the HUD widget
 }
 startSensors();
 // Some browsers only grant the mic prompt after a user gesture: retry then.
@@ -249,4 +265,4 @@ window.addEventListener('keydown', startSensors, { once: true });
 setTimeout(() => tts.warm(FIXED_PHRASES), 2500);
 
 // expose for console experimentation
-window.JARVIS = { sm, director, simulator, assistant, widgets, voice, audioFx, speech, tts, ai, music, library, geo, visual };
+window.JARVIS = { sm, director, simulator, assistant, widgets, voice, audioFx, speech, tts, ai, music, library, playlists, geo, appointments, push, visual };

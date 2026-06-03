@@ -62,14 +62,25 @@ export class NeuralTTS {
 
     try {
       if (!this.ensure()) throw new Error('no AudioContext');
+      // On mobile the context can be suspended after a TTS gap; resume it
+      // before playback or the neural voice plays silently.
+      if (this.ctx.state === 'suspended') { try { await this.ctx.resume(); } catch (e) { /* noop */ } }
+
       const res = await fetch(this.endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: phrase, voiceId: this.voiceId, cache }),
       });
       if (!res.ok) throw new Error('tts http ' + res.status);
+      // Guard against an HTML/JSON error page (e.g. host interstitial) being
+      // decoded as audio: that would silently fail and drop to the default voice.
+      const ct = (res.headers.get('Content-Type') || '').toLowerCase();
+      if (ct && !/audio|mpeg|octet-stream/.test(ct)) {
+        throw new Error('tts non-audio response (' + ct + ')');
+      }
       const arr = await res.arrayBuffer();
-      const audioBuf = await this.ctx.decodeAudioData(arr);
+      if (!arr || arr.byteLength < 256) throw new Error('tts empty audio');
+      const audioBuf = await this._decode(arr);
 
       const src = this.ctx.createBufferSource();
       src.buffer = audioBuf;
@@ -84,6 +95,19 @@ export class NeuralTTS {
       console.warn('[NeuralTTS] fallback to browser voice:', err.message);
       this._browserSpeak(phrase, onend);
     }
+  }
+
+  /** decodeAudioData with the Safari/iOS callback fallback. */
+  _decode(arr) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const ok = (buf) => { if (!settled) { settled = true; resolve(buf); } };
+      const no = (e) => { if (!settled) { settled = true; reject(e || new Error('decode failed')); } };
+      try {
+        const p = this.ctx.decodeAudioData(arr, ok, no);
+        if (p && p.then) p.then(ok, no);
+      } catch (e) { no(e); }
+    });
   }
 
   _browserSpeak(text, onend) {

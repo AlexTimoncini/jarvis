@@ -7,6 +7,7 @@
    ============================================================ */
 import { visual } from '../core/VisualState.js';
 import { rgbToCss, clamp, TAU } from '../core/util.js';
+import { dprCap } from '../core/device.js';
 
 const FONT = '"Share Tech Mono", monospace';
 const metric = (label, unit, min, max, dec) => ({
@@ -17,7 +18,7 @@ export class BackgroundTelemetry {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = dprCap;
     this.time = 0;
     this.acc = 0;
 

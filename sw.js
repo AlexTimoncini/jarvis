@@ -1,5 +1,5 @@
-/* J.A.R.V.I.S. service worker — offline app shell. */
-const CACHE = 'jarvis-v3';
+/* J.A.R.V.I.S. service worker — offline app shell + push reminders. */
+const CACHE = 'jarvis-v7';
 
 const CORE = [
   './',
@@ -27,6 +27,32 @@ self.addEventListener('activate', (e) => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
     await self.clients.claim();
+  })());
+});
+
+/* ---- Web Push: appointment reminders ---- */
+self.addEventListener('push', (e) => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch (err) { data = { body: e.data && e.data.text() }; }
+  const title = data.title || 'J.A.R.V.I.S.';
+  const options = {
+    body: data.body || '',
+    tag: data.tag || 'jarvis',
+    icon: './assets/icons/icon-192.png',
+    badge: './assets/icons/icon-192.png',
+    vibrate: [80, 40, 80],
+    data: { url: data.url || './' },
+  };
+  e.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const target = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil((async () => {
+    const all = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of all) { if ('focus' in c) return c.focus(); }
+    if (clients.openWindow) return clients.openWindow(target);
   })());
 });
 
