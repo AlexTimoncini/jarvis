@@ -100,10 +100,13 @@ bus.on('music:ended', () => {
 bus.on('music:next', () => assistant.musicNext());
 bus.on('music:prev', () => assistant.musicPrev());
 
-// While music plays, suspend always-on wake scanning so the mic doesn't
-// periodically interrupt playback on mobile (tap the sphere/mic to talk).
+// While music actually plays, suspend always-on wake scanning so the mic
+// doesn't periodically re-grab the audio session and interrupt playback on
+// mobile (tap the sphere/mic to talk). Pausing/stopping resumes scanning.
 bus.on('music:started', () => voice.setMusicPlaying(true));
+bus.on('music:resumed', () => voice.setMusicPlaying(true));
 bus.on('music:stopped', () => voice.setMusicPlaying(false));
+bus.on('music:paused', () => voice.setMusicPlaying(false));
 
 /* ---------- Mic + voice wiring ---------- */
 // Unlock the audio output contexts on the first user gesture anywhere

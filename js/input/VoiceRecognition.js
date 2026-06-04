@@ -49,9 +49,12 @@ export class VoiceRecognition {
     this._quickEnds = 0;      // consecutive immediate onend -> backoff
     this._restartTimer = null;
 
-    // Wake-word scanning stays ALWAYS on, including while music plays or is
-    // paused, so the user can say "JARVIS" hands-free at any time. When the
-    // wake word fires, the state machine ducks the music automatically.
+    // While music is actively playing, wake-word scanning is SUSPENDED. The
+    // Web Speech engine ends/restarts every couple of seconds and each restart
+    // re-grabs the audio session, which would stutter the music. Suspending it
+    // lets playback run uninterrupted; tap the sphere/mic to talk (that path
+    // captures a command and ducks the music cleanly). Scanning resumes when
+    // the music stops or pauses.
     this.musicPlaying = false;
   }
 
@@ -166,6 +169,10 @@ export class VoiceRecognition {
   /** Start listening if we should and aren't already. */
   _startRec() {
     if (!this.active || this.held) return;
+    // Keep the engine OFF while music plays and we're only scanning for the
+    // wake word, so the mic never re-grabs the audio session and interrupts
+    // playback. Command capture (mode 'command', after a tap/wake) is allowed.
+    if (this.musicPlaying && this.mode === 'wake') return;
     if (this.running || this.starting) return;
     const rec = this._ensureRec();
     this.starting = true;
@@ -183,19 +190,28 @@ export class VoiceRecognition {
   _scheduleRestart() {
     clearTimeout(this._restartTimer);
     if (!this.active || this.held) return;
+    if (this.musicPlaying && this.mode === 'wake') return; // suspended during playback
     const base = MIN_RESTART_MS + this._quickEnds * 500;
     const delay = Math.min(base, MAX_BACKOFF_MS);
     this._restartTimer = setTimeout(() => this._startRec(), delay);
   }
 
   /**
-   * Track whether music is currently playing. Wake-word scanning stays ON
-   * regardless, so "JARVIS" is recognized hands-free during playback and
-   * while paused; we just make sure the engine is running in wake mode.
+   * Track whether music is actively playing. While it is, suspend wake-word
+   * scanning (stop the engine if it's mid wake-scan) so playback isn't
+   * interrupted; an in-progress command capture keeps going. When playback
+   * stops or pauses, resume always-on scanning.
    */
   setMusicPlaying(on) {
+    const was = this.musicPlaying;
     this.musicPlaying = !!on;
-    if (this.active && !this.held && this.mode === 'wake') {
+    if (!this.active || this.held) return;
+    if (this.musicPlaying) {
+      if (this.mode === 'wake') {
+        clearTimeout(this._restartTimer);
+        if (this.rec) { try { this.rec.stop(); } catch (e) { /* noop */ } }
+      }
+    } else if (was && this.mode === 'wake') {
       this._quickEnds = 0;
       this._startRec();
     }

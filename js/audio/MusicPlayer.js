@@ -9,6 +9,8 @@
      music:started  { artist, title, file }
      music:stopped  {}
      music:ended    {}
+     music:paused   {}
+     music:resumed  {}
      music:next / music:prev   (from BT next/prev buttons)
    ============================================================ */
 import { bus } from '../core/EventBus.js';
@@ -118,6 +120,7 @@ export class MusicPlayer {
     if (!this.current) return;
     this.audio.pause();
     this._setSessionState('paused');
+    bus.emit('music:paused', {});
   }
 
   resume() {
@@ -125,6 +128,7 @@ export class MusicPlayer {
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
     this.audio.play().catch(() => {});
     this._setSessionState('playing');
+    bus.emit('music:resumed', {});
   }
 
   stop() {
